@@ -24,7 +24,6 @@ def searchFunction(node)
   end
 end
 
-puts PATH_TO_PARSER
 
 # load generated parser
 parser = TreeSitter::Parser.new
