@@ -1,19 +1,21 @@
 require 'pathname'
 require 'tree_sitter'
 
+# get path for parser from environmental variables
+PATH_TO_PARSER = ENV['PATH_TO_C99PARSER']
+
 # check child node of :compound_statement's
 def searchCompoundStatement(node)
   node.each do |child|
     puts "compound_statement's child node type: #{child.type}"
     if child.type == :declaration
-      p child
+      child.declarator
     end
   end
 end
 
 # check child node of :function_children
 def searchFunction(node)
-  puts node.fields
   node.each do |child|
     puts "Function's child node type: #{child.type}"
     if child.type == :compound_statement
@@ -22,9 +24,11 @@ def searchFunction(node)
   end
 end
 
+puts PATH_TO_PARSER
+
 # load generated parser
 parser = TreeSitter::Parser.new
-language = TreeSitter::Language.load('c', '/home/joe/lab/sources/tree-sitter-c/libtree-sitter-c.so')
+language = TreeSitter::Language.load('c', PATH_TO_PARSER)
 parser.language = language
 
 # read c source from current directory
