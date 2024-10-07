@@ -2,6 +2,7 @@ require 'pathname'
 require 'tree_sitter'
 
 # get path for parser from environmental variables
+PATH_TO_SOURCE = ENV['OBJECT']
 PATH_TO_PARSER = ENV['PATH_TO_C99PARSER']
 $vars = Hash.new
 
@@ -57,11 +58,12 @@ language = TreeSitter::Language.load('c', PATH_TO_PARSER)
 parser.language = language
 
 # read c source from current directory
-src = File.read('source.c');
+src = File.read(PATH_TO_SOURCE);
 
 # parse
 tree = parser.parse_string(nil, src)
 root = tree.root_node
+puts root
 
 # check children nodes of root
 puts "==================================="
