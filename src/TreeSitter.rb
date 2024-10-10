@@ -43,11 +43,24 @@ def searchDeclaration(node, code)
   end
 end
 
+# 3rd depth
+# check :expression
+def searchExpression(node, code)
+  node.each_named do |child|
+    puts "      #{child.type}"
+  end
+end
+
 # 2nd depth
 # check child node of :compound_statement
 def searchCompoundStatement(node, code)
   node.each do |child|
     puts "    compound_statement's child node type: #{child.type}"
+
+    # find the part of Expression
+    if child.type == :expression_statement
+      searchExpression(child, code)
+    end
 
     # find the part of defining Variable
     if child.type == :declaration
@@ -101,12 +114,20 @@ def run
   # show result
   puts "number of found declarator: #{$numberOfFoundDeclarator}"
   puts $vars
+  puts
+
+  puts "VALUE type variables:"
+  puts "#{$vars['VALUE']}"
+  puts
 end
 
 
 # main
 
 # mesure time and memory of whole program
+# run gc in advance
+GC.start
+
 before = ObjectSpace.memsize_of_all
 totalTime = Benchmark.realtime do
   run()
@@ -116,3 +137,4 @@ memoryUsed = ObjectSpace.memsize_of_all - before
 
 puts "Total processing time: #{totalTime} seconds"
 puts "Memory used: #{memoryUsed} KB"
+puts
