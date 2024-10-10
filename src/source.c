@@ -1,5 +1,7 @@
 #include<stdio.h>
 
+#define VALUE int
+
 int add(int a, int b){
 	int tmp = a + b;
 	return tmp;
@@ -23,6 +25,7 @@ int main(){
 	swap(&fi, &fj);
 	printf("fi: %f, fj: %f\n", fi, fj);
 
+	VALUE userDefinedValueType;
 	return 0;	
 }
 

@@ -16,12 +16,18 @@ def searchDeclaration(node, code)
   varName = nil
 
   node.each_named do |child|
-    if child.type == :primitive_type
+
+    # locate type, pritimive and user_defined
+    if child.type == :primitive_type || child.type == :type_identifier
       varType = code[child.start_byte...child.end_byte]
       puts "      varType found"
+
+    # locate variable name, no initialization
     elsif child.type == :identifier
       varName = code[child.start_byte...child.end_byte]
       puts "      varName found"
+
+    # locate variable name, has initialization
     elsif child.type == :init_declarator
       declarator =  child.child_by_field_name('declarator')
       varName = code[declarator.start_byte...declarator.end_byte] 
