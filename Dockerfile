@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     pkg-config \
     libtree-sitter-dev \
+	vim \
     && rm -rf /var/lib/apt/lists/*
 
 
