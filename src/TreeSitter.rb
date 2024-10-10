@@ -1,5 +1,7 @@
 require 'pathname'
 require 'tree_sitter'
+require 'benchmark'
+require 'objspace'
 
 # get path for parser from environmental variables
 PATH_TO_SOURCE = ENV['OBJECT']
@@ -69,32 +71,48 @@ def searchFunction(node, code)
 end
 
 
-# main
+# initiate program
+def run
+
 # load generated parser
-parser = TreeSitter::Parser.new
-language = TreeSitter::Language.load('c', PATH_TO_PARSER)
-parser.language = language
+  parser = TreeSitter::Parser.new
+  language = TreeSitter::Language.load('c', PATH_TO_PARSER)
+  parser.language = language
 
-# read c source from current directory
-src = File.read(PATH_TO_SOURCE);
+  # read c source from current directory
+  src = File.read(PATH_TO_SOURCE);
 
-# parse
-tree = parser.parse_string(nil, src)
-root = tree.root_node
+  # parse
+  tree = parser.parse_string(nil, src)
+  root = tree.root_node
 
-# check children nodes of root
-puts "==================================="
-root.each do |child|
-  puts "child node type: #{child.type}"
+  # check children nodes of root
+  puts "==================================="
+  root.each do |child|
+    puts "child node type: #{child.type}"
 
-  # find the part of defining Function
-  if child.type == :function_definition
-    searchFunction(child, src)
+    # find the part of defining Function
+    if child.type == :function_definition
+      searchFunction(child, src)
+    end
   end
+  puts "==================================="
+
+  # show result
+  puts "number of found declarator: #{$numberOfFoundDeclarator}"
+  puts $vars
 end
-puts "==================================="
 
-# show result
-puts "number of found declarator: #{$numberOfFoundDeclarator}"
-puts $vars
 
+# main
+
+# mesure time and memory of whole program
+before = ObjectSpace.memsize_of_all
+totalTime = Benchmark.realtime do
+  run()
+end
+memoryUsed = ObjectSpace.memsize_of_all - before
+
+
+puts "Total processing time: #{totalTime} seconds"
+puts "Memory used: #{memoryUsed} KB"
