@@ -132,9 +132,10 @@ before = ObjectSpace.memsize_of_all
 totalTime = Benchmark.realtime do
   run()
 end
-memoryUsed = ObjectSpace.memsize_of_all - before
+after = ObjectSpace.memsize_of_all
 
 
 puts "Total processing time: #{totalTime} seconds"
-puts "Memory used: #{memoryUsed} KB"
-puts
+puts "Memory used before: #{before / 1024} KB"
+puts "Memory used after : #{after / 1024} KB"
+puts "Memory used diff  : #{(after - before) / 1024} KB"
