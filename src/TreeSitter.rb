@@ -55,7 +55,7 @@ end
 # check child node of :compound_statement
 def searchCompoundStatement(node, code)
   node.each do |child|
-    puts "    compound_statement's child node type: #{child.type}"
+    puts "    compound_statement's child: #{child.type}"
 
     # find the part of Expression
     if child.type == :expression_statement
@@ -70,13 +70,35 @@ def searchCompoundStatement(node, code)
   end
 end
 
+# 2nd depth
+# check child node of :functin_declarator
+def searchFunctionDeclarator(node, code)
+  node.each_named do |child|
+    puts "    child: #{child.type}"
+
+    # the part of arguments
+    if child.type == :parameter_list
+      args =  code[(child.start_byte + 1)...(child.end_byte - 1)].split(', ')
+      if args.size > 0
+        puts "#{args.size} args found: #{args}"
+      end
+    end
+  end
+end
+
 # 1st depth
 # check child node of :function_children
 def searchFunction(node, code)
-  node.each do |child|
-    puts "  Function's child node type: #{child.type}"
+  node.each_named do |child|
+    puts "  Function's child: #{child.type}"
 
-    # find Function Body
+    # deep into Function Declarator
+    if child.type == :function_declarator
+      puts "  function_declarator's child: #{child}" 
+      searchFunctionDeclarator(child, code)
+    end
+
+    # deep into Function Body
     if child.type == :compound_statement
       searchCompoundStatement(child, code)
     end
