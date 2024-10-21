@@ -6,11 +6,18 @@ require 'objspace'
 # get path for parser from environmental variables
 PATH_TO_SOURCE = ENV['OBJECT']
 PATH_TO_PARSER = ENV['PATH_TO_C99PARSER']
-$vars = Hash.new
+$vars = Array.new
 $numberOfFoundDeclarator = 0
 class CVar
-  attr_accessor :type, :name, :pointerDepth
-  def initialize(declaration)
+  attr_accessor :type, :name, :pointerCount
+  def initialize(type, name, pointerCount)
+    @type = type
+    @name = name
+    @pointerCount = pointerCount
+  end
+
+  def isPointer?
+    @pointerCount > 0 ? true : false
   end
 end
   
@@ -26,10 +33,9 @@ def searchDeclaration(node, code)
   node.each_named do |child|
 
     # locate type, pritimive and user_defined
-    if child.type == :primitive_type || child.type == :type_identifier
+    if child.type == :primitive_type || child.type == :type_identifier || child.type == :sized_type_specifier
       varType = code[child.start_byte...child.end_byte]
       puts "      varType found"
-
     # locate variable name, no initialization
     elsif child.type == :identifier
       varName = code[child.start_byte...child.end_byte]
@@ -44,8 +50,15 @@ def searchDeclaration(node, code)
   end
 
   if !(varType.nil? || varName.nil?) 
-    $vars[varType] ||= [] 
-    $vars[varType] << varName 
+    varName.gsub!(" ", "")
+    pointerCount = 0;
+
+    varName.each_char do |c|
+      pointerCount += 1 if c == '*'
+    end
+    varName.gsub!("*", "") 
+    var = CVar.new(varType, varName, pointerCount)
+    $vars << var
   end
 end
 
@@ -145,11 +158,9 @@ def run
 
   # show result
   puts "number of found declarator: #{$numberOfFoundDeclarator}"
-  puts $vars
-  puts
-
-  puts "VALUE type variables:"
-  puts "#{$vars['VALUE']}"
+  $vars.each do |var|
+    puts "type: #{var.type}, name: #{var.name}, isPointer?: #{var.isPointer?}, pointerCount: #{var.pointerCount}"
+  end
   puts
 end
 
