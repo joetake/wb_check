@@ -25,7 +25,8 @@ int main(){
 	swap(&fi, &fj);
 	printf("fi: %f, fj: %f\n", fi, fj);
 
-	VALUE userDefinedValueType;
+	const unsigned int _a = 0;
+	const VALUE userDefinedValueType;
 	return 0;	
 }
 
