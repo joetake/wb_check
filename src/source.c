@@ -20,8 +20,8 @@ int main(){
 	i = add(i, j);
 	printf("i: %d\n", i);
 	
-	float fi = 0.1;
-	float fj = 0.3;
+	float*    fi = 0.1;
+	float *fj = 0.3;
 	swap(&fi, &fj);
 	printf("fi: %f, fj: %f\n", fi, fj);
 

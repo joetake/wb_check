@@ -8,6 +8,12 @@ PATH_TO_SOURCE = ENV['OBJECT']
 PATH_TO_PARSER = ENV['PATH_TO_C99PARSER']
 $vars = Hash.new
 $numberOfFoundDeclarator = 0
+class CVar
+  attr_accessor :type, :name, :pointerDepth
+  def initialize(declaration)
+  end
+end
+  
 
 # 3rd depth
 # check :declaration (variable declaration)
@@ -47,7 +53,11 @@ end
 # check :expression
 def searchExpression(node, code)
   node.each_named do |child|
-    puts "      #{child.type}"
+    if child.type == :assignment_expression
+      left = child.child_by_field_name('left')
+      leftValue = code[left.start_byte...left.end_byte]
+      puts "        ASSIGNMENT, letfValue: #{leftValue}"
+    end
   end
 end
 
