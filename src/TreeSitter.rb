@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'pathname'
 require 'tree_sitter'
 require 'benchmark'
@@ -6,10 +8,11 @@ require 'objspace'
 # get path for parser from environmental variables
 PATH_TO_SOURCE = ENV['OBJECT']
 PATH_TO_PARSER = ENV['PATH_TO_C99PARSER']
-$vars = Array.new
+$vars = []
 $numberOfFoundDeclarator = 0
 class CVar
   attr_accessor :type, :name, :pointerCount
+
   def initialize(type, name, pointerCount)
     @type = type
     @name = name
@@ -17,19 +20,16 @@ class CVar
   end
 
   def isPointer?
-    @pointerCount > 0 ? true : false
+    @pointerCount.positive?
   end
 end
 
 def findCvar(name)
   $vars.each do |var|
-    if var.name == name
-      return var
-    end
+    return var if var.name == name
   end
-  return nil
+  nil
 end
-
 
 # 3rd depth
 # check :declaration (variable declaration)
@@ -40,53 +40,53 @@ def searchDeclaration(node, code)
   varName = nil
 
   node.each_named do |child|
-
     # locate type, pritimive and user_defined
-    if child.type == :primitive_type || child.type == :type_identifier || child.type == :sized_type_specifier
+    case child.type
+    when :primitive_type, :type_identifier, :sized_type_specifier
       varType = code[child.start_byte...child.end_byte]
-      puts "      varType found"
+      puts '      varType found'
     # locate variable name, no initialization
-    elsif child.type == :identifier
+    when :identifier
       varName = code[child.start_byte...child.end_byte]
-      puts "      varName found"
+      puts '      varName found'
 
     # locate variable name, has initialization
-    elsif child.type == :init_declarator
-      declarator =  child.child_by_field_name('declarator')
+    when :init_declarator
+      declarator = child.child_by_field_name('declarator')
       varName = code[declarator.start_byte...declarator.end_byte]
-      puts "      varName found"
+      puts '      varName found'
     end
   end
 
-  if !(varType.nil? || varName.nil?)
-    varName.gsub!(" ", "")
-    pointerCount = 0;
+  return if varType.nil? || varName.nil?
 
-    varName.each_char do |c|
-      pointerCount += 1 if c == '*'
-    end
-    varName.gsub!("*", "")
-    var = CVar.new(varType, varName, pointerCount)
-    $vars << var
+  varName.gsub!(' ', '')
+  pointerCount = 0
+
+  varName.each_char do |c|
+    pointerCount += 1 if c == '*'
   end
+  varName.gsub!('*', '')
+  var = CVar.new(varType, varName, pointerCount)
+  $vars << var
 end
 
 # 3rd depth
 # check :expression
 def searchExpression(node, code)
   node.each_named do |child|
-    if child.type == :assignment_expression
-      left = child.child_by_field_name('left')
-      leftValue = code[left.start_byte...left.end_byte]
-      cvar = findCvar(leftValue)
-      if cvar == nil
-        puts('variable in expression not found')
-        exit
-      end
+    next unless child.type == :assignment_expression
 
-      line_number = child.start_point.row + 1
-      puts "        ASSIGNMENT, lname: #{cvar.name}, ltype: #{cvar.type}, lispointer:#{cvar.isPointer?} line: #{line_number}"
+    left = child.child_by_field_name('left')
+    leftValue = code[left.start_byte...left.end_byte]
+    cvar = findCvar(leftValue)
+    if cvar.nil?
+      puts('variable in expression not found')
+      exit
     end
+
+    line_number = child.start_point.row + 1
+    puts "        ASSIGNMENT, lname: #{cvar.name}, ltype: #{cvar.type}, lispointer:#{cvar.isPointer?} line: #{line_number}"
   end
 end
 
@@ -97,9 +97,7 @@ def searchCompoundStatement(node, code)
     puts "    compound_statement's child: #{child.type}"
 
     # find the part of Expression
-    if child.type == :expression_statement
-      searchExpression(child, code)
-    end
+    searchExpression(child, code) if child.type == :expression_statement
 
     # find the part of defining Variable
     if child.type == :declaration
@@ -116,12 +114,10 @@ def searchFunctionDeclarator(node, code)
     puts "    child: #{child.type}"
 
     # the part of arguments
-    if child.type == :parameter_list
-      args =  code[(child.start_byte + 1)...(child.end_byte - 1)].split(', ')
-      if args.size > 0
-        puts "#{args.size} args found: #{args}"
-      end
-    end
+    next unless child.type == :parameter_list
+
+    args = code[(child.start_byte + 1)...(child.end_byte - 1)].split(', ')
+    puts "#{args.size} args found: #{args}" if args.size.positive?
   end
 end
 
@@ -138,48 +134,41 @@ def searchFunction(node, code)
     end
 
     # deep into Function Body
-    if child.type == :compound_statement
-      searchCompoundStatement(child, code)
-    end
+    searchCompoundStatement(child, code) if child.type == :compound_statement
   end
 end
 
-
 # initiate program
 def run
-
-# load generated parser
+  # load generated parser
   parser = TreeSitter::Parser.new
   language = TreeSitter::Language.load('c', PATH_TO_PARSER)
   parser.language = language
 
   # read c source from current directory
-  src = File.read(PATH_TO_SOURCE);
+  src = File.read(PATH_TO_SOURCE)
 
   # parse
   tree = parser.parse_string(nil, src)
   root = tree.root_node
 
   # check children nodes of root
-  puts "==================================="
+  puts '==================================='
   root.each do |child|
     puts "child node type: #{child.type}"
 
     # find the part of defining Function
-    if child.type == :function_definition
-      searchFunction(child, src)
-    end
+    searchFunction(child, src) if child.type == :function_definition
   end
-  puts "==================================="
+  puts '==================================='
 
   # show result
   puts "number of found declarator: #{$numberOfFoundDeclarator}"
   $vars.each do |var|
-  puts "type: #{var.type}, name: #{var.name}, isPointer?: #{var.isPointer?}, pointerCount: #{var.pointerCount}"
+    puts "type: #{var.type}, name: #{var.name}, isPointer?: #{var.isPointer?}, pointerCount: #{var.pointerCount}"
   end
   puts
 end
-
 
 # main
 
@@ -189,10 +178,9 @@ GC.start
 
 before = ObjectSpace.memsize_of_all
 totalTime = Benchmark.realtime do
-  run()
+  run
 end
 after = ObjectSpace.memsize_of_all
-
 
 puts "Total processing time: #{totalTime} seconds"
 puts "Memory used before: #{before / 1024} KB"
