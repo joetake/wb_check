@@ -20,7 +20,16 @@ class CVar
     @pointerCount > 0 ? true : false
   end
 end
-  
+
+def findCvar(name)
+  $vars.each do |var|
+    if var.name == name
+      return var
+    end
+  end
+  return nil
+end
+
 
 # 3rd depth
 # check :declaration (variable declaration)
@@ -44,19 +53,19 @@ def searchDeclaration(node, code)
     # locate variable name, has initialization
     elsif child.type == :init_declarator
       declarator =  child.child_by_field_name('declarator')
-      varName = code[declarator.start_byte...declarator.end_byte] 
+      varName = code[declarator.start_byte...declarator.end_byte]
       puts "      varName found"
-    end 
+    end
   end
 
-  if !(varType.nil? || varName.nil?) 
+  if !(varType.nil? || varName.nil?)
     varName.gsub!(" ", "")
     pointerCount = 0;
 
     varName.each_char do |c|
       pointerCount += 1 if c == '*'
     end
-    varName.gsub!("*", "") 
+    varName.gsub!("*", "")
     var = CVar.new(varType, varName, pointerCount)
     $vars << var
   end
@@ -69,7 +78,14 @@ def searchExpression(node, code)
     if child.type == :assignment_expression
       left = child.child_by_field_name('left')
       leftValue = code[left.start_byte...left.end_byte]
-      puts "        ASSIGNMENT, letfValue: #{leftValue}"
+      cvar = findCvar(leftValue)
+      if cvar == nil
+        puts('variable in expression not found')
+        exit
+      end
+
+      line_number = child.start_point.row + 1
+      puts "        ASSIGNMENT, lname: #{cvar.name}, ltype: #{cvar.type}, lispointer:#{cvar.isPointer?} line: #{line_number}"
     end
   end
 end
@@ -117,7 +133,7 @@ def searchFunction(node, code)
 
     # deep into Function Declarator
     if child.type == :function_declarator
-      puts "  function_declarator's child: #{child}" 
+      puts "  function_declarator's child: #{child}"
       searchFunctionDeclarator(child, code)
     end
 
@@ -159,7 +175,7 @@ def run
   # show result
   puts "number of found declarator: #{$numberOfFoundDeclarator}"
   $vars.each do |var|
-    puts "type: #{var.type}, name: #{var.name}, isPointer?: #{var.isPointer?}, pointerCount: #{var.pointerCount}"
+  puts "type: #{var.type}, name: #{var.name}, isPointer?: #{var.isPointer?}, pointerCount: #{var.pointerCount}"
   end
   puts
 end
