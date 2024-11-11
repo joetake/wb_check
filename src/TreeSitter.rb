@@ -82,12 +82,17 @@ def searchExpression(node, code, vars_in_scope)
   node.each_named do |child|
     next unless child.type == :assignment_expression
 
+    puts child
     left = child.child_by_field_name('left')
     leftValue = code[left.start_byte...left.end_byte]
 
+    pointerCount = 0
+    leftValue.each_char do |c|
+      pointerCount += 1 if c == '*'
+    end
     # 値へのアクセスのための * を削除、要修正？？
     leftValue.gsub!('*', '')
-    puts "   "
+
     cvar = findCvar(vars_in_scope, leftValue)
     if cvar.nil?
       puts('variable in expression not found')
@@ -96,6 +101,12 @@ def searchExpression(node, code, vars_in_scope)
 
     line_number = child.start_point.row + 1
     puts "        ASSIGNMENT to; name: #{cvar.name}, ltype: #{cvar.type}, lispointer:#{cvar.isPointer?} line: #{line_number}"
+    if cvar.type == "VALUE" && pointerCount == 0
+      puts "        WRITEBARRIER on fire"
+      right = child.child_by_field_name('right')
+      rightValue = code[(right.start_byte + 1)...(right.end_byte - 1)]
+   
+    end
   end
 end
 

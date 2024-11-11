@@ -25,9 +25,19 @@ int main(){
 	swap(&fi, &fj);
 	printf("fi: %f, fj: %f\n", fi, fj);
 
+	VALUE *a = 2;
+
 	const unsigned int _a = 0;
 	const VALUE userDefinedValueType;
 	return 0;	
+}
+
+void changeReference(VALUE *a){
+	*a = 4;
+
+	VALUE *b = 4;
+	a = b;
+	return;
 }
 
 
