@@ -24,8 +24,12 @@ class CVar
   end
 end
 
-def findCvar(name)
-  $vars.each do |var|
+def findCvar(vars_in_scope, name)
+  if vars_in_scope.size == 0
+    puts "no variables in array"
+    exit
+  end
+  vars_in_scope.each do |var|
     return var if var.name == name
   end
   nil
@@ -34,7 +38,7 @@ end
 # 3rd depth
 # check :declaration (variable declaration)
 # find variable type and name
-# now is only for primitive types (need to deal with user-defined-type)
+# primitive type, user-defined type, pointer type
 def searchDeclaration(node, code)
   varType = nil
   varName = nil
@@ -69,41 +73,48 @@ def searchDeclaration(node, code)
   varName.gsub!('*', '')
   var = CVar.new(varType, varName, pointerCount)
   $vars << var
+  return var
 end
 
 # 3rd depth
 # check :expression
-def searchExpression(node, code)
+def searchExpression(node, code, vars_in_scope)
   node.each_named do |child|
     next unless child.type == :assignment_expression
 
     left = child.child_by_field_name('left')
     leftValue = code[left.start_byte...left.end_byte]
-    cvar = findCvar(leftValue)
+
+    # 値へのアクセスのための * を削除、要修正？？
+    leftValue.gsub!('*', '')
+    puts "   "
+    cvar = findCvar(vars_in_scope, leftValue)
     if cvar.nil?
       puts('variable in expression not found')
       exit
     end
 
     line_number = child.start_point.row + 1
-    puts "        ASSIGNMENT, lname: #{cvar.name}, ltype: #{cvar.type}, lispointer:#{cvar.isPointer?} line: #{line_number}"
+    puts "        ASSIGNMENT to; name: #{cvar.name}, ltype: #{cvar.type}, lispointer:#{cvar.isPointer?} line: #{line_number}"
   end
 end
 
 # 2nd depth
 # check child node of :compound_statement
-def searchCompoundStatement(node, code)
+def searchCompoundStatement(node, code, vars_in_scope)
   node.each do |child|
     puts "    compound_statement's child: #{child.type}"
-
-    # find the part of Expression
-    searchExpression(child, code) if child.type == :expression_statement
 
     # find the part of defining Variable
     if child.type == :declaration
       $numberOfFoundDeclarator += 1
-      searchDeclaration(child, code)
+      var = searchDeclaration(child, code)
+      vars_in_scope << var
     end
+
+    # find the part of Expression
+    searchExpression(child, code, vars_in_scope) if child.type == :expression_statement
+
   end
 end
 
@@ -114,27 +125,49 @@ def searchFunctionDeclarator(node, code)
     puts "    child: #{child.type}"
 
     # the part of arguments
-    next unless child.type == :parameter_list
+    case child.type
+    when :parameter_list
 
-    args = code[(child.start_byte + 1)...(child.end_byte - 1)].split(', ')
-    puts "#{args.size} args found: #{args}" if args.size.positive?
+      str_args = code[(child.start_byte + 1)...(child.end_byte - 1)].split(', ')
+      args = Array.new
+      str_args.each do |v|
+        pointerCount = 0
+        v.each_char do |c|
+          pointerCount += 1 if c == '*'
+        end
+        v.gsub!('*', '')
+        
+        var_type, var_name = v.split(' ')
+        var_type.gsub!(' ', '')
+        var_name.gsub!(' ', '')
+
+        args << CVar.new(var_type, var_name, pointerCount)
+      end
+
+      return args
+    end
   end
 end
 
 # 1st depth
 # check child node of :function_children
 def searchFunction(node, code)
+
+  # 関数スコープ内にある変数と関数の引数を管理、ブロック内の変数などのスコープ管理はまだ
+  vars_in_scope = []
+
   node.each_named do |child|
     puts "  Function's child: #{child.type}"
 
     # deep into Function Declarator
     if child.type == :function_declarator
       puts "  function_declarator's child: #{child}"
-      searchFunctionDeclarator(child, code)
+      args = searchFunctionDeclarator(child, code)
+      vars_in_scope.concat(Array(args))
     end
 
     # deep into Function Body
-    searchCompoundStatement(child, code) if child.type == :compound_statement
+    searchCompoundStatement(child, code, vars_in_scope) if child.type == :compound_statement
   end
 end
 
