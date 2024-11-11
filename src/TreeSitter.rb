@@ -10,6 +10,7 @@ PATH_TO_SOURCE = ENV['OBJECT']
 PATH_TO_PARSER = ENV['PATH_TO_C99PARSER']
 $vars = []
 $numberOfFoundDeclarator = 0
+
 class CVar
   attr_accessor :type, :name, :pointerCount
 
@@ -34,6 +35,28 @@ def findCvar(vars_in_scope, name)
   end
   nil
 end
+
+class WriteBarrier
+  attr_accessor :old, :new, :line_number
+  def initialize(old, new, line_number)
+    @old = old
+    @new = new
+    @line_number = line_number
+  end
+end
+
+class WriteBarrierList
+  attr_reader :list
+  def initialize()
+    @list = Array.new
+  end
+
+  def add(old, new, line_number)
+    @list << WriteBarrier.new(old, new, line_number)    
+  end
+end
+# クラス定義の都合上ここに宣言, あとでコードを分けたい
+$wb_list = WriteBarrierList.new
 
 # 3rd depth
 # check :declaration (variable declaration)
@@ -105,7 +128,7 @@ def searchExpression(node, code, vars_in_scope)
       puts "        WRITEBARRIER on fire"
       right = child.child_by_field_name('right')
       rightValue = code[(right.start_byte + 1)...(right.end_byte - 1)]
-   
+      $wb_list.add(leftValue, rightValue, line_number)       
     end
   end
 end
@@ -212,6 +235,9 @@ def run
     puts "type: #{var.type}, name: #{var.name}, isPointer?: #{var.isPointer?}, pointerCount: #{var.pointerCount}"
   end
   puts
+  $wb_list.list.each do |e|
+    puts "write barrier insertion -> old: #{e.old}, new: #{e.new}, line number: #{e.line_number}"
+  end
 end
 
 # main
