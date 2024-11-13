@@ -9,23 +9,23 @@ require 'objspace'
 PATH_TO_SOURCE = ENV['OBJECT']
 PATH_TO_PARSER = ENV['PATH_TO_C99PARSER']
 $vars = []
-$numberOfFoundDeclarator = 0
+$number_of_found_declarator = 0
 
 class CVar
-  attr_accessor :type, :name, :pointerCount
+  attr_accessor :type, :name, :pointer_count
 
-  def initialize(type, name, pointerCount)
+  def initialize(type, name, pointer_count)
     @type = type
     @name = name
-    @pointerCount = pointerCount
+    @pointer_count = pointer_count
   end
 
-  def isPointer?
-    @pointerCount.positive?
+  def is_pointer?
+    @pointer_count.positive?
   end
 end
 
-def findCvar(vars_in_scope, name)
+def find_cvar(vars_in_scope, name)
   if vars_in_scope.size == 0
     puts "no variables in array"
     exit
@@ -62,99 +62,99 @@ $wb_list = WriteBarrierList.new
 # check :declaration (variable declaration)
 # find variable type and name
 # primitive type, user-defined type, pointer type
-def searchDeclaration(node, code)
-  varType = nil
-  varName = nil
+def search_declaration(node, code)
+  var_type = nil
+  var_name = nil
 
   node.each_named do |child|
     # locate type, pritimive and user_defined
     case child.type
     when :primitive_type, :type_identifier, :sized_type_specifier
-      varType = code[child.start_byte...child.end_byte]
+      var_type = code[child.start_byte...child.end_byte]
       puts '      varType found'
     # locate variable name, no initialization
     when :identifier
-      varName = code[child.start_byte...child.end_byte]
+      var_name = code[child.start_byte...child.end_byte]
       puts '      varName found'
 
     # locate variable name, has initialization
     when :init_declarator
       declarator = child.child_by_field_name('declarator')
-      varName = code[declarator.start_byte...declarator.end_byte]
+      var_name = code[declarator.start_byte...declarator.end_byte]
       puts '      varName found'
     end
   end
 
-  return if varType.nil? || varName.nil?
+  return if var_type.nil? || var_name.nil?
 
-  varName.gsub!(' ', '')
-  pointerCount = 0
+  var_name.gsub!(' ', '')
+  pointer_count = 0
 
-  varName.each_char do |c|
-    pointerCount += 1 if c == '*'
+  var_name.each_char do |c|
+    pointer_count += 1 if c == '*'
   end
-  varName.gsub!('*', '')
-  var = CVar.new(varType, varName, pointerCount)
+  var_name.gsub!('*', '')
+  var = CVar.new(var_type, var_name, pointer_count)
   $vars << var
   return var
 end
 
 # 3rd depth
 # check :expression
-def searchExpression(node, code, vars_in_scope)
+def search_expression(node, code, vars_in_scope)
   node.each_named do |child|
     next unless child.type == :assignment_expression
 
     puts child
     left = child.child_by_field_name('left')
-    leftValue = code[left.start_byte...left.end_byte]
+    left_value = code[left.start_byte...left.end_byte]
 
-    pointerCount = 0
-    leftValue.each_char do |c|
-      pointerCount += 1 if c == '*'
+    pointer_count = 0
+    left_value.each_char do |c|
+      pointer_count += 1 if c == '*'
     end
     # 値へのアクセスのための * を削除、要修正？？
-    leftValue.gsub!('*', '')
+    left_value.gsub!('*', '')
 
-    cvar = findCvar(vars_in_scope, leftValue)
+    cvar = find_cvar(vars_in_scope, left_value)
     if cvar.nil?
       puts('variable in expression not found')
       exit
     end
 
     line_number = child.start_point.row + 1
-    puts "        ASSIGNMENT to; name: #{cvar.name}, ltype: #{cvar.type}, lispointer:#{cvar.isPointer?} line: #{line_number}"
-    if cvar.type == "VALUE" && pointerCount == 0
+    puts "        ASSIGNMENT to; name: #{cvar.name}, ltype: #{cvar.type}, lispointer:#{cvar.is_pointer?} line: #{line_number}"
+    if cvar.type == "VALUE" && pointer_count == 0
       puts "        WRITEBARRIER on fire"
       right = child.child_by_field_name('right')
-      rightValue = code[(right.start_byte + 1)...(right.end_byte - 1)]
-      $wb_list.add(leftValue, rightValue, line_number)       
+      right_value = code[(right.start_byte + 1)...(right.end_byte - 1)]
+      $wb_list.add(left_value, right_value, line_number)       
     end
   end
 end
 
 # 2nd depth
 # check child node of :compound_statement
-def searchCompoundStatement(node, code, vars_in_scope)
+def search_compound_statement(node, code, vars_in_scope)
   node.each do |child|
     puts "    compound_statement's child: #{child.type}"
 
     # find the part of defining Variable
     if child.type == :declaration
-      $numberOfFoundDeclarator += 1
-      var = searchDeclaration(child, code)
+      $number_of_found_declarator += 1
+      var = search_declaration(child, code)
       vars_in_scope << var
     end
 
     # find the part of Expression
-    searchExpression(child, code, vars_in_scope) if child.type == :expression_statement
+    search_expression(child, code, vars_in_scope) if child.type == :expression_statement
 
   end
 end
 
 # 2nd depth
 # check child node of :functin_declarator
-def searchFunctionDeclarator(node, code)
+def search_function_declarator(node, code)
   node.each_named do |child|
     puts "    child: #{child.type}"
 
@@ -165,9 +165,9 @@ def searchFunctionDeclarator(node, code)
       str_args = code[(child.start_byte + 1)...(child.end_byte - 1)].split(', ')
       args = Array.new
       str_args.each do |v|
-        pointerCount = 0
+        pointer_count = 0
         v.each_char do |c|
-          pointerCount += 1 if c == '*'
+          pointer_count += 1 if c == '*'
         end
         v.gsub!('*', '')
         
@@ -175,7 +175,7 @@ def searchFunctionDeclarator(node, code)
         var_type.gsub!(' ', '')
         var_name.gsub!(' ', '')
 
-        args << CVar.new(var_type, var_name, pointerCount)
+        args << CVar.new(var_type, var_name, pointer_count)
       end
 
       return args
@@ -185,7 +185,7 @@ end
 
 # 1st depth
 # check child node of :function_children
-def searchFunction(node, code)
+def search_function(node, code)
 
   # 関数スコープ内にある変数と関数の引数を管理、ブロック内の変数などのスコープ管理はまだ
   vars_in_scope = []
@@ -196,12 +196,12 @@ def searchFunction(node, code)
     # deep into Function Declarator
     if child.type == :function_declarator
       puts "  function_declarator's child: #{child}"
-      args = searchFunctionDeclarator(child, code)
+      args = search_function_declarator(child, code)
       vars_in_scope.concat(Array(args))
     end
 
     # deep into Function Body
-    searchCompoundStatement(child, code, vars_in_scope) if child.type == :compound_statement
+    search_compound_statement(child, code, vars_in_scope) if child.type == :compound_statement
   end
 end
 
@@ -225,14 +225,14 @@ def run
     puts "child node type: #{child.type}"
 
     # find the part of defining Function
-    searchFunction(child, src) if child.type == :function_definition
+    search_function(child, src) if child.type == :function_definition
   end
   puts '==================================='
 
   # show result
-  puts "number of found declarator: #{$numberOfFoundDeclarator}"
+  puts "number of found declarator: #{$number_of_found_declarator}"
   $vars.each do |var|
-    puts "type: #{var.type}, name: #{var.name}, isPointer?: #{var.isPointer?}, pointerCount: #{var.pointerCount}"
+    puts "type: #{var.type}, name: #{var.name}, is pointer?: #{var.is_pointer?}, pointer count: #{var.pointer_count}"
   end
   puts
   $wb_list.list.each do |e|
@@ -247,12 +247,12 @@ end
 GC.start
 
 before = ObjectSpace.memsize_of_all
-totalTime = Benchmark.realtime do
+total_time = Benchmark.realtime do
   run
 end
 after = ObjectSpace.memsize_of_all
 
-puts "Total processing time: #{totalTime} seconds"
+puts "Total processing time: #{total_time} seconds"
 puts "Memory used before: #{before / 1024} KB"
 puts "Memory used after : #{after / 1024} KB"
 puts "Memory used diff  : #{(after - before) / 1024} KB"
