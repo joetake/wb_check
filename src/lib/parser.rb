@@ -85,7 +85,7 @@ class Parser
         puts('variable in expression not found')
         exit
       end
-      if cvar.type == "VALUE" && pointer_count == 0
+      if cvar.type == "VALUE" && pointer_count > 0
         puts "        WRITEBARRIER on fire"
         right = child.child_by_field_name('right')
         right_value = code[right.start_byte...right.end_byte]
