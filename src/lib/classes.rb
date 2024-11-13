@@ -18,7 +18,8 @@ def find_cvar(vars_in_scope, name)
     return var if var.name == name
   end
 
-  puts "ERROR: can't find variables in scope"
+  puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
+  puts "vars_in_scope: #{vars_in_scope}"
   exit
 end
 

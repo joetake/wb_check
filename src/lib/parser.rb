@@ -116,32 +116,36 @@ class Parser
   # 2nd depth
   # check child node of :functin_declarator
   def search_function_declarator(node, code)
+    args = []
+
     node.each_named do |child|
       puts "    child: #{child.type}"
 
       # the part of arguments
       case child.type
       when :parameter_list
+        child.each_named do |param|
+          if param.type == :parameter_declaration
 
-        str_args = code[(child.start_byte + 1)...(child.end_byte - 1)].split(', ')
-        args = Array.new
-        str_args.each do |v|
-          pointer_count = 0
-          v.each_char do |c|
-            pointer_count += 1 if c == '*'
+            # get type and name
+            type = param.child_by_field_name('type')
+            declarator = param.child_by_field_name('declarator')
+
+            var_type = code[type.start_byte...type.end_byte]
+            var_name = code[declarator.start_byte...declarator.end_byte]
+
+            # count pointer
+            pointer_count = var_name.count('*')
+            var_name.delete!('*')
+            var_type.strip!
+            var_name.strip!
+            
+            args << CVar.new(var_type, var_name, pointer_count)
           end
-          v.gsub!('*', '')
-          
-          var_type, var_name = v.split(' ')
-          var_type.gsub!(' ', '')
-          var_name.gsub!(' ', '')
-
-          args << CVar.new(var_type, var_name, pointer_count)
         end
-
-        return args
       end
     end
+    return args
   end
 
   # 1st depth
