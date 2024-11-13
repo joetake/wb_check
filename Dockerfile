@@ -23,6 +23,6 @@ COPY . /app
 
 
 ENV PATH_TO_C99PARSER /app/tree-sitter-c/libtree-sitter-c.so
-ENV OBJECT /app/src/source.c
+ENV OBJECT /app/src/c_sample/source.c
 
-CMD ["ruby", "TreeSitter.rb"]
+CMD ["ruby", "auto_insertion.rb"]

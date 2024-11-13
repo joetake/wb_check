@@ -12,7 +12,7 @@ shell:
 
 # コンテナ内のみで使用
 run:
-	ruby src/TreeSitter.rb
+	ruby src/auto_insertion.rb
 
 clean:
 	docker rmi $(IMAGE_NAME)
