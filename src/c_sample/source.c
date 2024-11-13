@@ -15,8 +15,9 @@ void swap(float* c, float* d){
 }
 
 int main(){
-	int i = 1;
-	int j = 3;
+	int i, j;
+	i = 1;
+	j = 3;
 	i = add(i, j);
 	printf("i: %d\n", i);
 	

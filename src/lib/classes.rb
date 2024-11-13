@@ -14,14 +14,12 @@ class CVar
 end
 
 def find_cvar(vars_in_scope, name)
-  if vars_in_scope.size == 0
-    puts "no variables in array"
-    exit
-  end
   vars_in_scope.each do |var|
     return var if var.name == name
   end
-  nil
+
+  puts "ERROR: can't find variables in scope"
+  exit
 end
 
 class WriteBarrier

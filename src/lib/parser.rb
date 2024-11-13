@@ -17,7 +17,7 @@ class Parser
   # primitive type, user-defined type, pointer type
   def search_declaration(node, code)
     var_type = nil
-    var_name = nil
+    var_names = []
 
     node.each_named do |child|
       # locate type, pritimive and user_defined
@@ -27,29 +27,34 @@ class Parser
         puts '      varType found'
       # locate variable name, no initialization
       when :identifier
-        var_name = code[child.start_byte...child.end_byte]
+        var_names << code[child.start_byte...child.end_byte]
         puts '      varName found'
 
       # locate variable name, has initialization
       when :init_declarator
         declarator = child.child_by_field_name('declarator')
-        var_name = code[declarator.start_byte...declarator.end_byte]
+        var_names << code[declarator.start_byte...declarator.end_byte]
         puts '      varName found'
       end
     end
 
-    return if var_type.nil? || var_name.nil?
+    # もういらない？
+    # return if var_type.nil? || var_name.nil?
 
-    var_name.gsub!(' ', '')
-    pointer_count = 0
+    vars = []
+    var_names.each do |var_name|
+      var_name.gsub!(' ', '')
+      pointer_count = 0
 
-    var_name.each_char do |c|
-      pointer_count += 1 if c == '*'
+      var_name.each_char do |c|
+        pointer_count += 1 if c == '*'
+      end
+      var_name.gsub!('*', '')
+      var = CVar.new(var_type, var_name, pointer_count)
+      @vars << var
+      vars << var
     end
-    var_name.gsub!('*', '')
-    var = CVar.new(var_type, var_name, pointer_count)
-    @vars << var
-    return var
+    return vars
   end
 
   # 3rd depth
@@ -69,14 +74,17 @@ class Parser
       # 値へのアクセスのための * を削除、要修正？？
       left_value.gsub!('*', '')
 
+      line_number = child.start_point.row + 1
+      puts "        line: #{line_number}"
+
+      # create cvar instance
       cvar = find_cvar(vars_in_scope, left_value)
+      puts "        ASSIGNMENT to; name: #{cvar.name}, type: #{cvar.type}, is pointer?:#{cvar.is_pointer?}"
+
       if cvar.nil?
         puts('variable in expression not found')
         exit
       end
-
-      line_number = child.start_point.row + 1
-      puts "        ASSIGNMENT to; name: #{cvar.name}, ltype: #{cvar.type}, lispointer:#{cvar.is_pointer?} line: #{line_number}"
       if cvar.type == "VALUE" && pointer_count == 0
         puts "        WRITEBARRIER on fire"
         right = child.child_by_field_name('right')
@@ -95,8 +103,8 @@ class Parser
       # find the part of defining Variable
       if child.type == :declaration
         @number_of_found_declarator += 1
-        var = search_declaration(child, code)
-        vars_in_scope << var
+        vars = search_declaration(child, code)
+        vars_in_scope.concat(vars)
       end
 
       # find the part of Expression
