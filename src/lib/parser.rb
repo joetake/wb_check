@@ -88,7 +88,7 @@ class Parser
       if cvar.type == "VALUE" && pointer_count == 0
         puts "        WRITEBARRIER on fire"
         right = child.child_by_field_name('right')
-        right_value = code[(right.start_byte + 1)...(right.end_byte - 1)]
+        right_value = code[right.start_byte...right.end_byte]
         @wb_list.add(left_value, right_value, line_number)       
       end
     end
