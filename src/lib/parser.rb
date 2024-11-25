@@ -11,7 +11,7 @@ class Parser
     @wb_list = WriteBarrierList.new
   end
 
-  # 3rd depth
+  # normally 3rd depth
   # check :declaration (variable declaration)
   # find variable type and name
   # primitive type, user-defined type, pointer type
@@ -24,17 +24,14 @@ class Parser
       case child.type
       when :primitive_type, :type_identifier, :sized_type_specifier
         var_type = code[child.start_byte...child.end_byte]
-        puts '      varType found'
       # locate variable name, no initialization
-      when :identifier
+      when :identifier, :field_identifier
         var_names << code[child.start_byte...child.end_byte]
-        puts '      varName found'
 
       # locate variable name, has initialization
       when :init_declarator
         declarator = child.child_by_field_name('declarator')
         var_names << code[declarator.start_byte...declarator.end_byte]
-        puts '      varName found'
       end
     end
 
@@ -51,7 +48,6 @@ class Parser
       end
       var_name.gsub!('*', '')
       var = CVar.new(var_type, var_name, pointer_count)
-      @vars << var
       vars << var
     end
     return vars
@@ -170,6 +166,23 @@ class Parser
     end
   end
 
+  # 1st depth
+  # check child node of :type_definition
+  def search_type_definition(node, code)
+
+    type_name = node.child_by_field_name('declarator')
+    puts code[type_name.start_byte...type_name.end_byte]
+
+    struct_node = node.child_by_field_name('type').child_by_field_name('body')
+    puts code[struct_node.start_byte...struct_node.end_byte]
+
+    field_list = []
+    struct_node.each_named do |c|
+      field_list.concat(search_declaration(c, code))
+    end 
+  end
+
+
   # initiate program
   def run
     # load generated parser
@@ -191,6 +204,9 @@ class Parser
 
       # find the part of defining Function
       search_function(child, src) if child.type == :function_definition
+
+      # find the part of defining type (like Struct)
+      search_type_definition(child, src) if child.type == :type_definition
     end
     puts '==================================='
 

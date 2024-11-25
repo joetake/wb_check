@@ -11,6 +11,10 @@ class CVar
   def is_pointer?
     @pointer_count.positive?
   end
+
+  def show
+    puts "type: #{@type}, name: #{@name}, pointer count: #{@pointer_count}"
+  end
 end
 
 def find_cvar(vars_in_scope, name)
