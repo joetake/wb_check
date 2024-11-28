@@ -28,6 +28,7 @@ def find_cvar(vars_in_scope, name)
 end
 
 class StructDefinitions
+  attr_accessor :list
   def initialize()
     @list = []
   end
@@ -43,7 +44,18 @@ class StructDefinitions
         return struct_definition.find_field(field_name)
       end
     end
+    nil
   end 
+
+  def inspect()
+    if @list.size == 0
+      puts "no Struct registered"
+    else
+      @list.each do |struct|
+        struct.inspect()
+      end
+    end
+  end
 end
 
 class StructDefinition
@@ -58,6 +70,15 @@ class StructDefinition
       if cvar.name == field_name
         return cvar
       end
+    end
+    nil
+  end
+
+  def inspect()
+    puts "name: #{@name}"
+    puts "fields:"
+    @fields.each do |f, i|
+      puts "#{i}: name: #{f.name}, type: #{f.type}"
     end
   end
 end

@@ -30,6 +30,8 @@ class Parser
       when :init_declarator, :pointer_declarator
         declarator = child.child_by_field_name('declarator')
         var_names << code[declarator.start_byte...declarator.end_byte]
+      when :array_declarator
+        var_names << code[child.start_byte...child.end_byte].gsub(/\[\w+\]/, "*")
       end
     end
 
@@ -61,26 +63,22 @@ class Parser
       left = child.child_by_field_name('left')
       left_value = code[left.start_byte...left.end_byte]
 
-      # check number of * on left
-      pointer_count = 0
-      left_value.each_char do |c|
-        pointer_count += 1 if c == '*'
-      end
 
-      # 値へのアクセスのための * を削除、要修正？？
-      left_value.gsub!('*', '')
 
       line_number = child.start_point.row + 1
       puts "        line: #{line_number}"
 
       cvar = nil
-      
+     
+      pointer_count = 0
+      # 演算子が複数使われる場合にまだ対応できていない
       # has allow operator
       if left_value.include?("->")
         tmp = left_value.split('->')
         variable_name = tmp[0]
 
         cvar = find_cvar(vars_in_scope, variable_name)
+        puts cvar.type
         if cvar.nil?
           puts('variable in expression not found')
           exit
@@ -91,10 +89,30 @@ class Parser
           field_name = tmp[i]          
           cvar = $struct_definitions.find_field(cvar.type, field_name)
         end
-
         pointer_count = tmp.size - 1
-      # has no allow operator
+      # has array access (like arr[2])
+      elsif left_value.include?("[")
+        left_value.gsub!(/\[\w+\]/, "*")
+
+        # check number of * on left and strip it
+        left_value.each_char do |c|
+          pointer_count += 1 if c == '*'
+        end
+        left_value.gsub!('*', '')
+
+        # may be access with using brackets
+        left_value.gsub!('(', '')
+        left_value.gsub!(')', '')
+        cvar = find_cvar(vars_in_scope, left_value) 
+      # has no operator
       else
+
+        # check number of * on left and strip it
+        left_value.each_char do |c|
+          pointer_count += 1 if c == '*'
+        end
+        left_value.gsub!('*', '')
+
         cvar = find_cvar(vars_in_scope, left_value)
         puts "        ASSIGNMENT to; name: #{cvar.name}, type: #{cvar.type}, is pointer?:#{cvar.is_pointer?}"
 
@@ -102,6 +120,7 @@ class Parser
           puts('variable in expression not found')
           exit
         end
+
       end
 
       

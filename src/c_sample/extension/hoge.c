@@ -50,6 +50,8 @@ static VALUE rb_huga(VALUE self, VALUE src) {
 
     RB_OBJ_WRITTEN(self, &data->field1, src);
 
+    VALUE array[11][2];
+    array[1] = old_value;
     return Qnil;
 }
 
