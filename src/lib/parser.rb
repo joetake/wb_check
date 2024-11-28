@@ -1,6 +1,7 @@
 require 'tree_sitter'
 require_relative 'classes'
 
+$struct_definitions = StructDefinitions.new()
 
 class Parser
   def initialize(path_to_source, path_to_parser)
@@ -11,10 +12,7 @@ class Parser
     @wb_list = WriteBarrierList.new
   end
 
-  # normally 3rd depth
-  # check :declaration (variable declaration)
-  # find variable type and name
-  # primitive type, user-defined type, pointer type
+  # check :declaration, return defined variables or fields
   def search_declaration(node, code)
     var_type = nil
     var_names = []
@@ -29,7 +27,7 @@ class Parser
         var_names << code[child.start_byte...child.end_byte]
 
       # locate variable name, has initialization
-      when :init_declarator
+      when :init_declarator, :pointer_declarator
         declarator = child.child_by_field_name('declarator')
         var_names << code[declarator.start_byte...declarator.end_byte]
       end
@@ -63,24 +61,50 @@ class Parser
       left = child.child_by_field_name('left')
       left_value = code[left.start_byte...left.end_byte]
 
+      # check number of * on left
       pointer_count = 0
       left_value.each_char do |c|
         pointer_count += 1 if c == '*'
       end
+
       # 値へのアクセスのための * を削除、要修正？？
       left_value.gsub!('*', '')
 
       line_number = child.start_point.row + 1
       puts "        line: #{line_number}"
 
-      # create cvar instance
-      cvar = find_cvar(vars_in_scope, left_value)
-      puts "        ASSIGNMENT to; name: #{cvar.name}, type: #{cvar.type}, is pointer?:#{cvar.is_pointer?}"
+      cvar = nil
+      
+      # has allow operator
+      if left_value.include?("->")
+        tmp = left_value.split('->')
+        variable_name = tmp[0]
 
-      if cvar.nil?
-        puts('variable in expression not found')
-        exit
+        cvar = find_cvar(vars_in_scope, variable_name)
+        if cvar.nil?
+          puts('variable in expression not found')
+          exit
+        end
+
+        # for multiple allow operator
+        (1...tmp.size).each do |i|
+          field_name = tmp[i]          
+          cvar = $struct_definitions.find_field(cvar.type, field_name)
+        end
+
+        pointer_count = tmp.size - 1
+      # has no allow operator
+      else
+        cvar = find_cvar(vars_in_scope, left_value)
+        puts "        ASSIGNMENT to; name: #{cvar.name}, type: #{cvar.type}, is pointer?:#{cvar.is_pointer?}"
+
+        if cvar.nil?
+          puts('variable in expression not found')
+          exit
+        end
       end
+
+      
       if cvar.type == "VALUE" && pointer_count > 0
         puts "        WRITEBARRIER on fire"
         right = child.child_by_field_name('right')
@@ -170,16 +194,21 @@ class Parser
   # check child node of :type_definition
   def search_type_definition(node, code)
 
+    # check the definition of field
     type_name = node.child_by_field_name('declarator')
-    puts code[type_name.start_byte...type_name.end_byte]
+    type_name = code[type_name.start_byte...type_name.end_byte]
+
 
     struct_node = node.child_by_field_name('type').child_by_field_name('body')
-    puts code[struct_node.start_byte...struct_node.end_byte]
 
     field_list = []
     struct_node.each_named do |c|
       field_list.concat(search_declaration(c, code))
     end 
+
+    # register definition of struct
+    struct_definition = StructDefinition.new(type_name, field_list)
+    $struct_definitions.register(struct_definition)
   end
 
 

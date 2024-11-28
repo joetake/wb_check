@@ -27,6 +27,41 @@ def find_cvar(vars_in_scope, name)
   exit
 end
 
+class StructDefinitions
+  def initialize()
+    @list = []
+  end
+
+  def register(struct_definition)
+    @list << struct_definition
+  end
+
+  # get type of field from struct name and field name
+  def find_field(variable_type, field_name)
+    @list.each do |struct_definition|
+      if struct_definition.name == variable_type
+        return struct_definition.find_field(field_name)
+      end
+    end
+  end 
+end
+
+class StructDefinition
+  attr_accessor :name, :fields
+  def initialize(name, fields)
+    @name = name
+    @fields = fields
+  end
+
+  def find_field(field_name)
+    @fields.each do |cvar|
+      if cvar.name == field_name
+        return cvar
+      end
+    end
+  end
+end
+
 class WriteBarrier
   attr_accessor :old, :new, :line_number
   def initialize(old, new, line_number)
