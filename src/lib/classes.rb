@@ -90,6 +90,10 @@ class WriteBarrier
     @new = new
     @line_number = line_number
   end
+
+  def inspect
+    puts "old: #{@old}, new: #{@new}, line_number: #{@line_number}"
+  end
 end
 
 class WriteBarrierList
@@ -100,5 +104,12 @@ class WriteBarrierList
 
   def add(old, new, line_number)
     @list << WriteBarrier.new(old, new, line_number)    
+  end
+
+  def inspect()
+    puts 'write barrier list: '
+    @list.each do |w|
+      w.inspect 
+    end
   end
 end

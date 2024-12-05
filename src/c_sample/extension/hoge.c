@@ -7,6 +7,11 @@ typedef struct {
     VALUE field2;
 } my_data;
 
+union UnionStruct {
+    int a;
+    VALUE b;
+}
+
 static void my_data_mark(void *ptr) {
     my_data *data = (my_data *)ptr;
     rb_gc_mark(data->id);

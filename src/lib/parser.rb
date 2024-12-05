@@ -7,9 +7,75 @@ class Parser
   def initialize(path_to_source, path_to_parser)
     @path_to_source = path_to_source
     @path_to_parser = path_to_parser
-    @vars = []
     @number_of_found_declarator = 0
     @wb_list = WriteBarrierList.new
+  end
+
+  def process_lhs(node, code, vars_in_scope)
+    case node.type
+    when :identifier
+      name = code[node.start_byte...node.end_byte]
+      cvar = find_cvar(vars_in_scope, name)
+      return {cvar: cvar, is_gc_managed: false, field_type: cvar.type}
+    when :pointer_expression
+      child = node.child_by_field_name('argument')
+      left_result = process_lhs(child, code, vars_in_scope)
+
+      cvar = left_result[:cvar]
+      # is_gc_managed = left_result[:is_gc_managed]
+      is_gc_managed = true
+      
+      return {cvar: cvar, is_gc_managed: is_gc_managed, field_type: cvar.type} 
+    when :field_expression
+      receiver = node.child_by_field_name('argument')
+      field = node.child_by_field_name('field')
+      field_name = code[field.start_byte...field.end_byte]
+      operator = node.child_by_field_name('operator')
+      operator_name = code[operator.start_byte...operator.end_byte]
+
+      left_result = process_lhs(receiver, code, vars_in_scope) 
+      cvar = left_result[:cvar]
+      is_gc_managed = left_result[:is_gc_managed]
+
+      field = $struct_definitions.find_field(cvar.type, field_name)
+      if field.nil?
+        puts "there is no such field in struct_definitions: #{field_name}"
+        puts "struct definitions:"
+        $struct_definitions.inspect
+        @wb_list.inspect
+        exit
+      end
+      field_type = field.type
+      
+      # 暫定的に '->' の時はライトバリアが必要とみなす
+      if operator_name == '->'
+        is_gc_managed = true
+        pointer_count = cvar.pointer_count + 1
+      else
+        is_gc_managed = left_result[:is_gc_managed]
+        pointer_count = cvar.pointer_count
+      end
+      return {cvar: CVar.new(field_name, field_type, pointer_count), is_gc_managed: is_gc_managed, field_type: field_type}
+
+    when :subscript_expression
+      array_node = node.child_by_field_name('argument')
+      array_code = code[array_node.start_byte...array_node.end_byte]      
+      array_code.gsub!(/\[\w+\]/, "*")
+      left_result = process_lhs(array_node, code, vars_in_scope)
+      cvar = left_result[:cvar]
+      is_gc_managed = true
+
+      element_type = find_cvar(vars_in_scope, array_code)
+      if element_type.nil?
+        puts "there is no array in cvar set: #{element_type}"
+        exit
+      end
+
+      return {cvar: cvar, is_gc_managed: is_gc_managed, field_type: cvar.type}
+    else
+      puts "未対応のノードタイプ: #{node.type}"
+      exit
+    end
   end
 
   # check :declaration, return defined variables or fields
@@ -62,69 +128,22 @@ class Parser
       puts child
       left = child.child_by_field_name('left')
       left_value = code[left.start_byte...left.end_byte]
-
-
-
       line_number = child.start_point.row + 1
       puts "        line: #{line_number}"
+      puts left
 
-      cvar = nil
-     
-      pointer_count = 0
-      # 演算子が複数使われる場合にまだ対応できていない
-      # has allow operator
-      if left_value.include?("->")
-        tmp = left_value.split('->')
-        variable_name = tmp[0]
+      analyzed_lhs_info = process_lhs(left, code, vars_in_scope)
+      cvar = analyzed_lhs_info[:cvar]
+      is_gc_managed = analyzed_lhs_info[:is_gc_managed]
+      field_type = analyzed_lhs_info[:field_type] 
 
-        cvar = find_cvar(vars_in_scope, variable_name)
-        puts cvar.type
-        if cvar.nil?
-          puts('variable in expression not found')
-          exit
-        end
-
-        # for multiple allow operator
-        (1...tmp.size).each do |i|
-          field_name = tmp[i]          
-          cvar = $struct_definitions.find_field(cvar.type, field_name)
-        end
-        pointer_count = tmp.size - 1
-      # has array access (like arr[2])
-      elsif left_value.include?("[")
-        left_value.gsub!(/\[\w+\]/, "*")
-
-        # check number of * on left and strip it
-        left_value.each_char do |c|
-          pointer_count += 1 if c == '*'
-        end
-        left_value.gsub!('*', '')
-
-        # may be access with using brackets
-        left_value.gsub!('(', '')
-        left_value.gsub!(')', '')
-        cvar = find_cvar(vars_in_scope, left_value) 
-      # has no operator
-      else
-
-        # check number of * on left and strip it
-        left_value.each_char do |c|
-          pointer_count += 1 if c == '*'
-        end
-        left_value.gsub!('*', '')
-
-        cvar = find_cvar(vars_in_scope, left_value)
-        puts "        ASSIGNMENT to; name: #{cvar.name}, type: #{cvar.type}, is pointer?:#{cvar.is_pointer?}"
-
-        if cvar.nil?
-          puts('variable in expression not found')
-          exit
-        end
-
+      if cvar.nil?
+        puts "couldn't find variable while analyze expression"
+        exit
       end
-
       
-      if cvar.type == "VALUE" && pointer_count > 0
+      puts "field_type: #{field_type}, is_gc_managed: #{is_gc_managed}"
+      if field_type == "VALUE" && is_gc_managed
         puts "        WRITEBARRIER on fire"
         right = child.child_by_field_name('right')
         right_value = code[right.start_byte...right.end_byte]
@@ -259,13 +278,6 @@ class Parser
     puts '==================================='
 
     # show result
-    puts "number of found declarator: #{@number_of_found_declarator}"
-    @vars.each do |var|
-      puts "type: #{var.type}, name: #{var.name}, is pointer?: #{var.is_pointer?}, pointer count: #{var.pointer_count}"
-    end
-    puts
-    @wb_list.list.each do |e|
-      puts "write barrier insertion -> old: #{e.old}, new: #{e.new}, line number: #{e.line_number}"
-    end
+    @wb_list.inspect
   end
 end
