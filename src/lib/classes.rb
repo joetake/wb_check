@@ -24,7 +24,9 @@ def find_cvar(vars_in_scope, name)
 
   puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
   puts "vars_in_scope: #{vars_in_scope}"
-  exit
+  # exit
+  # this is developing only !!!
+  return CVar.new("test", name, 0)
 end
 
 class StructDefinitions
@@ -45,7 +47,7 @@ class StructDefinitions
       end
     end
     nil
-  end 
+  end
 
   def inspect()
     if @list.size == 0
@@ -103,13 +105,19 @@ class WriteBarrierList
   end
 
   def add(old, new, line_number)
-    @list << WriteBarrier.new(old, new, line_number)    
+    @list << WriteBarrier.new(old, new, line_number)
   end
 
   def inspect()
     puts 'write barrier list: '
     @list.each do |w|
-      w.inspect 
+      w.inspect
     end
   end
+end
+
+def normalize_type_name(type_name)
+  type_name.sub(/^union\s+/, '')
+           .sub(/^struct\s+/, '')
+           .sub(/^enum\s+/, '')
 end
