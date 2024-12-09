@@ -248,6 +248,11 @@ f_negative_p(VALUE x)
 #define date_sg_t double
 #endif
 
+#define JULIAN_EPOCH_DATE "-4712-01-01"
+#define JULIAN_EPOCH_DATETIME JULIAN_EPOCH_DATE "T00:00:00+00:00"
+#define JULIAN_EPOCH_DATETIME_RFC3339 "Mon, 1 Jan -4712 00:00:00 +0000"
+#define JULIAN_EPOCH_DATETIME_HTTPDATE "Mon, 01 Jan -4712 00:00:00 GMT"
+
 /* A set of nth, jd, df and sf denote ajd + 1/2.  Each ajd begin at
  * noon of GMT (assume equal to UTC).  However, this begins at
  * midnight.
@@ -4378,7 +4383,7 @@ date_s__strptime_internal(int argc, VALUE *argv, VALUE klass,
  *   Date._strptime('2001-02-03', '%Y-%m-%d') # => {:year=>2001, :mon=>2, :mday=>3}
  *
  * For other formats, see
- * {Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc].
+ * {Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html].
  * (Unlike Date.strftime, does not support flags and width.)
  *
  * See also {strptime(3)}[https://man7.org/linux/man-pages/man3/strptime.3.html].
@@ -4407,7 +4412,7 @@ date_s__strptime(int argc, VALUE *argv, VALUE klass)
  *   Date.strptime('sat3feb01', '%a%d%b%y')   # => #<Date: 2001-02-03>
  *
  * For other formats, see
- * {Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc].
+ * {Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html].
  * (Unlike Date.strftime, does not support flags and width.)
  *
  * See argument {start}[rdoc-ref:calendars.rdoc@Argument+start].
@@ -4425,7 +4430,7 @@ date_s_strptime(int argc, VALUE *argv, VALUE klass)
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01");
+	str = rb_str_new2(JULIAN_EPOCH_DATE);
       case 1:
 	fmt = rb_str_new2("%F");
       case 2:
@@ -4478,8 +4483,7 @@ date_s__parse_internal(int argc, VALUE *argv, VALUE klass)
 {
     VALUE vstr, vcomp, hash, opt;
 
-    rb_scan_args(argc, argv, "11:", &vstr, &vcomp, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "11:", &vstr, &vcomp, &opt);
     check_limit(vstr, opt);
     StringValue(vstr);
     if (!rb_enc_str_asciicompat_p(vstr))
@@ -4501,7 +4505,7 @@ date_s__parse_internal(int argc, VALUE *argv, VALUE klass)
  * This method recognizes many forms in +string+,
  * but it is not a validator.
  * For formats, see
- * {"Specialized Format Strings" in Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc@Specialized+Format+Strings]
+ * {"Specialized Format Strings" in Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-Specialized+Format+Strings]
  *
  * If +string+ does not specify a valid date,
  * the result is unpredictable;
@@ -4536,7 +4540,7 @@ date_s__parse(int argc, VALUE *argv, VALUE klass)
  * This method recognizes many forms in +string+,
  * but it is not a validator.
  * For formats, see
- * {"Specialized Format Strings" in Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc@Specialized+Format+Strings]
+ * {"Specialized Format Strings" in Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-Specialized+Format+Strings]
  * If +string+ does not specify a valid date,
  * the result is unpredictable;
  * consider using Date._strptime instead.
@@ -4566,12 +4570,11 @@ date_s_parse(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, comp, sg, opt;
 
-    rb_scan_args(argc, argv, "03:", &str, &comp, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "03:", &str, &comp, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01");
+	str = rb_str_new2(JULIAN_EPOCH_DATE);
       case 1:
 	comp = Qtrue;
       case 2:
@@ -4601,7 +4604,7 @@ VALUE date__jisx0301(VALUE);
  *   Date._iso8601(string, limit: 128) -> hash
  *
  * Returns a hash of values parsed from +string+, which should contain
- * an {ISO 8601 formatted date}[rdoc-ref:strftime_formatting.rdoc@ISO+8601+Format+Specifications]:
+ * an {ISO 8601 formatted date}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-ISO+8601+Format+Specifications]:
  *
  *   d = Date.new(2001, 2, 3)
  *   s = d.iso8601    # => "2001-02-03"
@@ -4628,7 +4631,7 @@ date_s__iso8601(int argc, VALUE *argv, VALUE klass)
  *
  * Returns a new \Date object with values parsed from +string+,
  * which should contain
- * an {ISO 8601 formatted date}[rdoc-ref:strftime_formatting.rdoc@ISO+8601+Format+Specifications]:
+ * an {ISO 8601 formatted date}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-ISO+8601+Format+Specifications]:
  *
  *   d = Date.new(2001, 2, 3)
  *   s = d.iso8601   # => "2001-02-03"
@@ -4646,12 +4649,11 @@ date_s_iso8601(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01");
+	str = rb_str_new2(JULIAN_EPOCH_DATE);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -4671,7 +4673,7 @@ date_s_iso8601(int argc, VALUE *argv, VALUE klass)
  *   Date._rfc3339(string, limit: 128) -> hash
  *
  * Returns a hash of values parsed from +string+, which should be a valid
- * {RFC 3339 format}[rdoc-ref:strftime_formatting.rdoc@RFC+3339+Format]:
+ * {RFC 3339 format}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-RFC+3339+Format]:
  *
  *   d = Date.new(2001, 2, 3)
  *   s = d.rfc3339     # => "2001-02-03T00:00:00+00:00"
@@ -4699,7 +4701,7 @@ date_s__rfc3339(int argc, VALUE *argv, VALUE klass)
  *
  * Returns a new \Date object with values parsed from +string+,
  * which should be a valid
- * {RFC 3339 format}[rdoc-ref:strftime_formatting.rdoc@RFC+3339+Format]:
+ * {RFC 3339 format}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-RFC+3339+Format]:
  *
  *   d = Date.new(2001, 2, 3)
  *   s = d.rfc3339   # => "2001-02-03T00:00:00+00:00"
@@ -4717,12 +4719,11 @@ date_s_rfc3339(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01T00:00:00+00:00");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -4786,12 +4787,11 @@ date_s_xmlschema(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01");
+	str = rb_str_new2(JULIAN_EPOCH_DATE);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -4811,7 +4811,7 @@ date_s_xmlschema(int argc, VALUE *argv, VALUE klass)
  *   Date._rfc2822(string, limit: 128) -> hash
  *
  * Returns a hash of values parsed from +string+, which should be a valid
- * {RFC 2822 date format}[rdoc-ref:strftime_formatting.rdoc@RFC+2822+Format]:
+ * {RFC 2822 date format}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-RFC+2822+Format]:
  *
  *   d = Date.new(2001, 2, 3)
  *   s = d.rfc2822 # => "Sat, 3 Feb 2001 00:00:00 +0000"
@@ -4839,7 +4839,7 @@ date_s__rfc2822(int argc, VALUE *argv, VALUE klass)
  *
  * Returns a new \Date object with values parsed from +string+,
  * which should be a valid
- * {RFC 2822 date format}[rdoc-ref:strftime_formatting.rdoc@RFC+2822+Format]:
+ * {RFC 2822 date format}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-RFC+2822+Format]:
  *
  *   d = Date.new(2001, 2, 3)
  *   s = d.rfc2822   # => "Sat, 3 Feb 2001 00:00:00 +0000"
@@ -4857,11 +4857,11 @@ date_s_rfc2822(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("Mon, 1 Jan -4712 00:00:00 +0000");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME_RFC3339);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -4881,7 +4881,7 @@ date_s_rfc2822(int argc, VALUE *argv, VALUE klass)
  *   Date._httpdate(string, limit: 128) -> hash
  *
  * Returns a hash of values parsed from +string+, which should be a valid
- * {HTTP date format}[rdoc-ref:strftime_formatting.rdoc@HTTP+Format]:
+ * {HTTP date format}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-HTTP+Format]:
  *
  *   d = Date.new(2001, 2, 3)
  *   s = d.httpdate # => "Sat, 03 Feb 2001 00:00:00 GMT"
@@ -4907,7 +4907,7 @@ date_s__httpdate(int argc, VALUE *argv, VALUE klass)
  *
  * Returns a new \Date object with values parsed from +string+,
  * which should be a valid
- * {HTTP date format}[rdoc-ref:strftime_formatting.rdoc@HTTP+Format]:
+ * {HTTP date format}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-HTTP+Format]:
  *
  *   d = Date.new(2001, 2, 3)
      s = d.httpdate   # => "Sat, 03 Feb 2001 00:00:00 GMT"
@@ -4925,11 +4925,11 @@ date_s_httpdate(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("Mon, 01 Jan -4712 00:00:00 GMT");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME_HTTPDATE);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -4949,7 +4949,7 @@ date_s_httpdate(int argc, VALUE *argv, VALUE klass)
  *   Date._jisx0301(string, limit: 128) -> hash
  *
  * Returns a hash of values parsed from +string+, which should be a valid
- * {JIS X 0301 date format}[rdoc-ref:strftime_formatting.rdoc@JIS+X+0301+Format]:
+ * {JIS X 0301 date format}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-JIS+X+0301+Format]:
  *
  *   d = Date.new(2001, 2, 3)
  *   s = d.jisx0301    # => "H13.02.03"
@@ -4975,7 +4975,7 @@ date_s__jisx0301(int argc, VALUE *argv, VALUE klass)
  *   Date.jisx0301(string = '-4712-01-01', start = Date::ITALY, limit: 128) -> date
  *
  * Returns a new \Date object with values parsed from +string+,
- * which should be a valid {JIS X 0301 format}[rdoc-ref:strftime_formatting.rdoc@JIS+X+0301+Format]:
+ * which should be a valid {JIS X 0301 format}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-JIS+X+0301+Format]:
  *
  *   d = Date.new(2001, 2, 3)
  *   s = d.jisx0301   # => "H13.02.03"
@@ -4997,12 +4997,11 @@ date_s_jisx0301(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01");
+	str = rb_str_new2(JULIAN_EPOCH_DATE);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -6958,7 +6957,7 @@ static VALUE strftimev(const char *, VALUE,
  *   to_s -> string
  *
  * Returns a string representation of the date in +self+
- * in {ISO 8601 extended date format}[rdoc-ref:strftime_formatting.rdoc@ISO+8601+Format+Specifications]
+ * in {ISO 8601 extended date format}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-ISO+8601+Format+Specifications]
  * (<tt>'%Y-%m-%d'</tt>):
  *
  *   Date.new(2001, 2, 3).to_s # => "2001-02-03"
@@ -7239,7 +7238,7 @@ date_strftime_internal(int argc, VALUE *argv, VALUE self,
  *   Date.new(2001, 2, 3).strftime # => "2001-02-03"
  *
  * For other formats, see
- * {Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc].
+ * {Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html].
  *
  */
 static VALUE
@@ -7271,7 +7270,7 @@ strftimev(const char *fmt, VALUE self,
  *   asctime -> string
  *
  * Equivalent to #strftime with argument <tt>'%a %b %e %T %Y'</tt>
- * (or its {shorthand form}[rdoc-ref:strftime_formatting.rdoc@Shorthand+Conversion+Specifiers]
+ * (or its {shorthand form}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-Shorthand+Conversion+Specifiers]
  * <tt>'%c'</tt>):
  *
  *   Date.new(2001, 2, 3).asctime # => "Sat Feb  3 00:00:00 2001"
@@ -7290,7 +7289,7 @@ d_lite_asctime(VALUE self)
  *   iso8601    ->  string
  *
  * Equivalent to #strftime with argument <tt>'%Y-%m-%d'</tt>
- * (or its {shorthand form}[rdoc-ref:strftime_formatting.rdoc@Shorthand+Conversion+Specifiers]
+ * (or its {shorthand form}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-Shorthand+Conversion+Specifiers]
  * <tt>'%F'</tt>);
  *
  *   Date.new(2001, 2, 3).iso8601 # => "2001-02-03"
@@ -7307,7 +7306,7 @@ d_lite_iso8601(VALUE self)
  *   rfc3339 -> string
  *
  * Equivalent to #strftime with argument <tt>'%FT%T%:z'</tt>;
- * see {Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc]:
+ * see {Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html]:
  *
  *   Date.new(2001, 2, 3).rfc3339 # => "2001-02-03T00:00:00+00:00"
  *
@@ -7323,7 +7322,7 @@ d_lite_rfc3339(VALUE self)
  *   rfc2822 -> string
  *
  * Equivalent to #strftime with argument <tt>'%a, %-d %b %Y %T %z'</tt>;
- * see {Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc]:
+ * see {Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html]:
  *
  *   Date.new(2001, 2, 3).rfc2822 # => "Sat, 3 Feb 2001 00:00:00 +0000"
  *
@@ -7339,7 +7338,7 @@ d_lite_rfc2822(VALUE self)
  *   httpdate -> string
  *
  * Equivalent to #strftime with argument <tt>'%a, %d %b %Y %T GMT'</tt>;
- * see {Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc]:
+ * see {Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html]:
  *
  *   Date.new(2001, 2, 3).httpdate # => "Sat, 03 Feb 2001 00:00:00 GMT"
  *
@@ -8375,7 +8374,7 @@ datetime_s_strptime(int argc, VALUE *argv, VALUE klass)
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01T00:00:00+00:00");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME);
       case 1:
 	fmt = rb_str_new2("%FT%T%z");
       case 2:
@@ -8423,12 +8422,11 @@ datetime_s_parse(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, comp, sg, opt;
 
-    rb_scan_args(argc, argv, "03:", &str, &comp, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "03:", &str, &comp, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01T00:00:00+00:00");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME);
       case 1:
 	comp = Qtrue;
       case 2:
@@ -8470,12 +8468,11 @@ datetime_s_iso8601(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01T00:00:00+00:00");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -8485,7 +8482,7 @@ datetime_s_iso8601(int argc, VALUE *argv, VALUE klass)
         VALUE argv2[2], hash;
         argv2[0] = str;
         argv2[1] = opt;
-        if (!NIL_P(opt)) argc2--;
+        if (!NIL_P(opt)) argc2++;
 	hash = date_s__iso8601(argc2, argv2, klass);
 	return dt_new_by_frags(klass, hash, sg);
     }
@@ -8510,12 +8507,11 @@ datetime_s_rfc3339(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01T00:00:00+00:00");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -8550,12 +8546,11 @@ datetime_s_xmlschema(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01T00:00:00+00:00");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -8591,12 +8586,11 @@ datetime_s_rfc2822(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("Mon, 1 Jan -4712 00:00:00 +0000");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME_RFC3339);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -8631,12 +8625,11 @@ datetime_s_httpdate(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("Mon, 01 Jan -4712 00:00:00 GMT");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME_HTTPDATE);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -8676,12 +8669,11 @@ datetime_s_jisx0301(int argc, VALUE *argv, VALUE klass)
 {
     VALUE str, sg, opt;
 
-    rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
-    if (!NIL_P(opt)) argc--;
+    argc = rb_scan_args(argc, argv, "02:", &str, &sg, &opt);
 
     switch (argc) {
       case 0:
-	str = rb_str_new2("-4712-01-01T00:00:00+00:00");
+	str = rb_str_new2(JULIAN_EPOCH_DATETIME);
       case 1:
 	sg = INT2FIX(DEFAULT_SG);
     }
@@ -8723,7 +8715,7 @@ dt_lite_to_s(VALUE self)
  *   DateTime.now.strftime # => "2022-07-01T11:03:19-05:00"
  *
  * For other formats,
- * see {Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc]:
+ * see {Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html]:
  *
  */
 static VALUE
@@ -8962,9 +8954,10 @@ date_to_time(VALUE self)
     get_d1a(self);
 
     if (m_julian_p(adat)) {
-        self = d_lite_gregorian(self);
-        get_d1b(self);
+        VALUE g = d_lite_gregorian(self);
+        get_d1b(g);
         adat = bdat;
+        self = g;
     }
 
     t = f_local3(rb_cTime,
@@ -9042,9 +9035,10 @@ datetime_to_time(VALUE self)
     get_d1(self);
 
     if (m_julian_p(dat)) {
-	self = d_lite_gregorian(self);
-	get_d1a(self);
+	VALUE g = d_lite_gregorian(self);
+	get_d1a(g);
 	dat = adat;
+	self = g;
     }
 
     {
@@ -9523,7 +9517,7 @@ Init_date_core(void)
      * calendar dates.
      *
      * Consider using
-     * {class Time}[rdoc-ref:Time]
+     * {class Time}[https://docs.ruby-lang.org/en/master/Time.html]
      * instead of class \Date if:
      *
      * - You need both dates and times; \Date handles only dates.
@@ -9575,7 +9569,7 @@ Init_date_core(void)
      *     Date.strptime('fri31dec99', '%a%d%b%y')  # => #<Date: 1999-12-31>
      *
      * See also the specialized methods in
-     * {"Specialized Format Strings" in Formats for Dates and Times}[rdoc-ref:strftime_formatting.rdoc@Specialized+Format+Strings]
+     * {"Specialized Format Strings" in Formats for Dates and Times}[https://docs.ruby-lang.org/en/master/strftime_formatting_rdoc.html#label-Specialized+Format+Strings]
      *
      * == Argument +limit+
      *
