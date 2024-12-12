@@ -85,6 +85,36 @@ class StructDefinition
   end
 end
 
+class FunctionsRetType
+  def initialize()
+    @TypeInfo = []
+  end
+  
+  def register(name, type, pointer_count)
+    @TypeInfo << FunctionRetType.new(name, type, pointer_count)
+  end
+
+  def find_by_fname(fname)
+    @TypeInfo.each do |frt|
+      puts frt.name
+      if frt.name == fname
+        puts "frt.name: #{frt.name}"
+        return frt
+      end
+    end
+    nil
+  end
+end
+
+class FunctionRetType
+  attr_accessor :name, :type, :pointer_count
+  def initialize(name, type, pointer_count)
+    @name = name
+    @type = type
+    @pointer_count = pointer_count
+  end
+end
+
 class WriteBarrier
   attr_accessor :old, :new, :line_number
   def initialize(old, new, line_number)

@@ -1,7 +1,8 @@
 require 'tree_sitter'
 require_relative 'classes'
 
-$struct_definitions = StructDefinitions.new()
+$struct_definitions = StructDefinitions.new
+$functions_ret_type = FunctionsRetType.new
 
 class Parser
   def initialize(path_to_source, path_to_parser)
@@ -70,6 +71,15 @@ class Parser
     when :parenthesized_expression
       inner = node.named_child(0)
       return process_lhs(inner, code, vars_in_scope)
+    when :call_expression
+      func_node = node.child_by_field_name('function')
+      func_name = code[func_node.start_byte...func_node.end_byte]
+      puts func_name
+      frt = $functions_ret_type.find_by_fname(func_name)
+      # puts frt
+      # puts "#{frt.type}, #{frt.name}, #{frt.pointer_count}"
+      # p frt
+      return {cvar: CVar.new(frt.type, frt.name, frt.pointer_count), is_gc_managed: false, field_type: frt.type}
     else
       puts "未対応のノードタイプ: #{node.type}"
       exit
@@ -117,11 +127,12 @@ class Parser
         var_types << code[child.start_byte...child.end_byte]
       when :comment , :storage_class_specifier, :type_qualifier
 
-      else
-        puts "!! child type: #{child.type}"
-        puts code[child.start_byte...child.end_byte]
-        puts child
-        exit
+      # only for debug
+      # else
+      #   puts "!! child type: #{child.type}"
+      #   puts code[child.start_byte...child.end_byte]
+      #   puts child
+      #   exit
       end
     end
 
@@ -220,7 +231,6 @@ class Parser
       # the part of arguments
       case child.type
       when :parameter_list
-        puts "count: #{child.named_child_count}"
        if child.named_child_count == 1
           declaration_node = child.named_child(0)
           type_node = declaration_node.child_by_field_name('type')
@@ -264,20 +274,35 @@ class Parser
 
     # 関数スコープ内にある変数と関数の引数を管理、ブロック内の変数などのスコープ管理はまだ
     vars_in_scope = []
-
+    puts node
     node.each_named do |child|
       puts "  Function's child: #{child.type}"
+      case child.type
 
+      # return type
+      when :primitive_type, :type_identifier
+        type_str = code[child.start_byte...child.end_byte]
+        pointer_count = type_str.count('*')
+        type_str.delete!('*')
+        f_declarator = node.child_by_field_name('declarator')
+        f_identifier = f_declarator.child(0)
+        f_name = code[f_identifier.start_byte...f_identifier.end_byte]
+        puts "!!!! #{f_name}, #{type_str}, #{pointer_count}"
+        $functions_ret_type.register(f_name, type_str, pointer_count)
+        puts $functions_ret_type
+        
       # deep into Function Declarator
-      if child.type == :function_declarator
+      when :function_declarator
         puts "  function_declarator's child: #{child}"
         args = search_function_declarator(child, code)
         vars_in_scope.concat(Array(args))
-      end
 
       # deep into Function Body
-      search_compound_statement(child, code, vars_in_scope) if child.type == :compound_statement
+      when :compound_statement
+        search_compound_statement(child, code, vars_in_scope)
+      end
     end
+
   end
 
   # 1st depth
@@ -297,17 +322,40 @@ class Parser
     type_name = code[type_name.start_byte...type_name.end_byte]
 
 
+    # is struct or union definition
+    if struct_node
+      field_list = []
+      struct_node.each_named do |c|
+        field_list.concat(search_declaration(c, code))
+      end
 
-    field_list = []
-    struct_node.each_named do |c|
-      field_list.concat(search_declaration(c, code))
+      # register definition of struct
+      struct_definition = StructDefinition.new(type_name, field_list)
+      $struct_definitions.register(struct_definition)
+    
+    # 
+    else
+      return
     end
-
-    # register definition of struct
-    struct_definition = StructDefinition.new(type_name, field_list)
-    $struct_definitions.register(struct_definition)
   end
 
+  # 1st depth
+  def search_func_proto(node, code)
+  function_decl = node.child_by_field_name('declarator')
+  return if function_decl.nil? || function_decl.type != :function_declarator
+
+  type_node = node.child_by_field_name('type')
+  return if type_node.nil?
+
+  return_type_str = code[type_node.start_byte...type_node.end_byte]
+  pointer_count = return_type_str.count('*')
+  return_type_str.delete!('*')
+
+  func_id_node = function_decl.child_by_field_name('declarator')
+  func_name = code[func_id_node.start_byte...func_id_node.end_byte]
+
+  $functions_ret_type.register(func_name.strip, return_type_str.strip, pointer_count) 
+  end
 
   # initiate program
   def run
@@ -333,6 +381,8 @@ class Parser
       # find the part of defining Function
       when :function_definition
         search_function(child, src)
+      when :declaration
+        search_func_proto(child, src)
 
       # find the part of defining type (like Struct)
       when :type_definition, :union_specifier, :struct_specifier
