@@ -19,14 +19,13 @@ end
 
 def find_cvar(vars_in_scope, name)
   vars_in_scope.each do |var|
+    p var
     return var if var.name == name
   end
 
   puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
   puts "vars_in_scope: #{vars_in_scope}"
-  # exit
-  # this is developing only !!!
-  return CVar.new("test", name, 0)
+  exit
 end
 
 class StructDefinitions
@@ -89,7 +88,7 @@ class FunctionsRetType
   def initialize()
     @TypeInfo = []
   end
-  
+
   def register(name, type, pointer_count)
     @TypeInfo << FunctionRetType.new(name, type, pointer_count)
   end

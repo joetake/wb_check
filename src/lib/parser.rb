@@ -4,6 +4,9 @@ require_relative 'classes'
 $struct_definitions = StructDefinitions.new
 $functions_ret_type = FunctionsRetType.new
 
+# list of global variables
+$grobalv = Array.new
+
 class Parser
   def initialize(path_to_source, path_to_parser)
     @path_to_source = path_to_source
@@ -17,6 +20,7 @@ class Parser
     when :identifier
       name = code[node.start_byte...node.end_byte]
       name.gsub!(/[\(\)\*]/, '')
+      puts "name: #{name}"
       cvar = find_cvar(vars_in_scope, name)
       return {cvar: cvar, is_gc_managed: false, field_type: cvar.type}
     when :pointer_expression
@@ -74,11 +78,7 @@ class Parser
     when :call_expression
       func_node = node.child_by_field_name('function')
       func_name = code[func_node.start_byte...func_node.end_byte]
-      puts func_name
       frt = $functions_ret_type.find_by_fname(func_name)
-      # puts frt
-      # puts "#{frt.type}, #{frt.name}, #{frt.pointer_count}"
-      # p frt
       return {cvar: CVar.new(frt.type, frt.name, frt.pointer_count), is_gc_managed: false, field_type: frt.type}
     else
       puts "未対応のノードタイプ: #{node.type}"
@@ -167,7 +167,8 @@ class Parser
 
   # 3rd depth
   # check :expression
-  def search_expression(node, code, vars_in_scope)
+  def search_expression(node, code, vars_in_fscope)
+    vars_in_scope = Array(vars_in_fscope).concat(Array($globalv))
     node.each_named do |child|
       next unless child.type == :assignment_expression
 
@@ -178,9 +179,6 @@ class Parser
       puts "        line: #{line_number}"
       puts left
 
-      if left_value.include?('tmx')
-        return
-      end
       analyzed_lhs_info = process_lhs(left, code, vars_in_scope)
       cvar = analyzed_lhs_info[:cvar]
       is_gc_managed = analyzed_lhs_info[:is_gc_managed]
@@ -203,7 +201,7 @@ class Parser
 
   # 2nd depth
   # check child node of :compound_statement
-  def search_compound_statement(node, code, vars_in_scope)
+  def search_compound_statement(node, code, vars_in_fscope)
     node.each do |child|
       puts "    compound_statement's child: #{child.type}"
 
@@ -211,11 +209,11 @@ class Parser
       if child.type == :declaration
         @number_of_found_declarator += 1
         vars = search_declaration(child, code)
-        vars_in_scope.concat(vars)
+        vars_in_fscope.concat(vars)
       end
 
       # find the part of Expression
-      search_expression(child, code, vars_in_scope) if child.type == :expression_statement
+      search_expression(child, code, vars_in_fscope) if child.type == :expression_statement
 
     end
   end
@@ -273,7 +271,7 @@ class Parser
   def search_function(node, code)
 
     # 関数スコープ内にある変数と関数の引数を管理、ブロック内の変数などのスコープ管理はまだ
-    vars_in_scope = []
+    vars_in_fscope = []
     puts node
     node.each_named do |child|
       puts "  Function's child: #{child.type}"
@@ -287,19 +285,18 @@ class Parser
         f_declarator = node.child_by_field_name('declarator')
         f_identifier = f_declarator.child(0)
         f_name = code[f_identifier.start_byte...f_identifier.end_byte]
-        puts "!!!! #{f_name}, #{type_str}, #{pointer_count}"
         $functions_ret_type.register(f_name, type_str, pointer_count)
         puts $functions_ret_type
-        
+
       # deep into Function Declarator
       when :function_declarator
         puts "  function_declarator's child: #{child}"
         args = search_function_declarator(child, code)
-        vars_in_scope.concat(Array(args))
+        vars_in_fscope.concat(Array(args))
 
       # deep into Function Body
       when :compound_statement
-        search_compound_statement(child, code, vars_in_scope)
+        search_compound_statement(child, code, vars_in_fscope)
       end
     end
 
@@ -332,29 +329,48 @@ class Parser
       # register definition of struct
       struct_definition = StructDefinition.new(type_name, field_list)
       $struct_definitions.register(struct_definition)
-    
-    # 
+
+    #
     else
       return
     end
   end
 
-  # 1st depth
+  # 1st depth, function proto definition or global
+  # ロジックがぐちゃぐちゃなので整理したい
   def search_func_proto(node, code)
-  function_decl = node.child_by_field_name('declarator')
-  return if function_decl.nil? || function_decl.type != :function_declarator
+    puts node
+    function_decl = node.child_by_field_name('declarator')
 
-  type_node = node.child_by_field_name('type')
-  return if type_node.nil?
+    # if it's global variable declaration, it should not have declarator of declarator
+    if function_decl.child_by_field_name('declarator').nil?
+      gvs = search_declaration(node, code)
+      $globalv = Array($globalv).concat(Array(gvs))
+    end
 
-  return_type_str = code[type_node.start_byte...type_node.end_byte]
-  pointer_count = return_type_str.count('*')
-  return_type_str.delete!('*')
+    if function_decl.type == :identifier
+      puts "#{code[function_decl.start_byte...function_decl.end_byte]}, #{code[node.start_byte...node.end_byte]}"
+    end
+    return if function_decl.nil? || (function_decl.type != :function_declarator && function_decl.type != :pointer_declarator)
 
-  func_id_node = function_decl.child_by_field_name('declarator')
-  func_name = code[func_id_node.start_byte...func_id_node.end_byte]
+    if function_decl.type == :pointer_declarator
+      function_decl = function_decl.child_by_field_name('declarator')
+    end
+    type_node = node.child_by_field_name('type')
+    if type_node.nil?
+      type_node = node.child_by_field_name('declartor')
+    end
 
-  $functions_ret_type.register(func_name.strip, return_type_str.strip, pointer_count) 
+    type_str = code[type_node.start_byte...type_node.end_byte]
+    pointer_count = type_str.count('*')
+    type_str.delete!('*')
+
+    func_id_node = function_decl.child_by_field_name('declarator')
+    puts "type_str: #{type_str}, pointer_count: #{pointer_count}"
+    return if func_id_node.nil?
+    func_name = code[func_id_node.start_byte...func_id_node.end_byte]
+
+    $functions_ret_type.register(func_name.strip, type_str.strip, pointer_count)
   end
 
   # initiate program
@@ -381,6 +397,7 @@ class Parser
       # find the part of defining Function
       when :function_definition
         search_function(child, src)
+      # global variables, function proto
       when :declaration
         search_func_proto(child, src)
 
@@ -393,5 +410,6 @@ class Parser
 
     # show result
     @wb_list.inspect
+    puts "success"
   end
 end
