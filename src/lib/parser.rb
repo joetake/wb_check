@@ -22,63 +22,26 @@ class Parser
       name.gsub!(/[\(\)\*]/, '')
       puts "name: #{name}"
       cvar = find_cvar(vars_in_scope, name)
-      return {cvar: cvar, is_typeddata: false, field_type: cvar.type}
+      return cvar.is_typeddata
     when :pointer_expression
       child = node.child_by_field_name('argument')
-      left_result = process_lhs(child, code, vars_in_scope)
+      result = process_lhs(child, code, vars_in_scope)
 
-      cvar = left_result[:cvar]
-      is_typeddata = true
-
-      return {cvar: cvar, is_typeddata: is_typeddata, field_type: cvar.type}
+      return result
     when :field_expression
       receiver = node.child_by_field_name('argument')
-      field = node.child_by_field_name('field')
-      field_name = code[field.start_byte...field.end_byte]
-      operator = node.child_by_field_name('operator')
-      operator_name = code[operator.start_byte...operator.end_byte]
-
-      left_result = process_lhs(receiver, code, vars_in_scope)
-      cvar = left_result[:cvar]
-      is_typeddata = left_result[:is_typeddata]
-
-      field = $struct_definitions.find_field(normalize_type_name(cvar.type), field_name)
-      if field.nil?
-        puts "there is no such field in struct_definitions: #{field_name}"
-        puts "cvar.type: #{cvar.type}, field_name: #{field_name}"
-        puts "struct definitions:"
-        $struct_definitions.inspect
-        @wb_list.inspect
-        exit
-      end
-      field_type = field.type
-
-      # 暫定的に '->' の時はライトバリアが必要とみなす
-      if operator_name == '->'
-        is_typeddata = true
-        pointer_count = cvar.pointer_count + 1
-      else
-        is_typeddata = left_result[:is_typeddata]
-        pointer_count = cvar.pointer_count
-      end
-      return {cvar: CVar.new(field_type, field_name, pointer_count), is_typeddata: is_typeddata, field_type: field_type}
+      result = process_lhs(receiver, code, vars_in_scope)
+      return result
 
     when :subscript_expression
       array_node = node.child_by_field_name('argument')
-      array_code = code[array_node.start_byte...array_node.end_byte]
-      left_result = process_lhs(array_node, code, vars_in_scope)
-      cvar = left_result[:cvar]
-      is_typeddata = true
-
-      return {cvar: cvar, is_typeddata: is_typeddata, field_type: cvar.type}
+      result = process_lhs(array_node, code, vars_in_scope)
+      return result
     when :parenthesized_expression
       inner = node.named_child(0)
       return process_lhs(inner, code, vars_in_scope)
     when :call_expression
-      func_node = node.child_by_field_name('function')
-      func_name = code[func_node.start_byte...func_node.end_byte]
-      frt = $functions_ret_type.find_by_fname(func_name)
-      return {cvar: CVar.new(frt.type, frt.name, frt.pointer_count), is_typeddata: false, field_type: frt.type}
+      return false
     else
       puts "未対応のノードタイプ: #{node.type}"
       exit
@@ -186,18 +149,9 @@ class Parser
           cvar.is_typeddata = true
         end
 
-        analyzed_lhs_info = process_lhs(left, code, vars_in_scope)
-        cvar = analyzed_lhs_info[:cvar]
-        is_typeddata = analyzed_lhs_info[:is_typeddata]
-        field_type = analyzed_lhs_info[:field_type]
+        result = process_lhs(left, code, vars_in_scope)
 
-        if cvar.nil?
-          puts "couldn't find variable while analyze expression"
-          exit
-        end
-
-        puts "field_type: #{field_type}, is_typeddata: #{is_typeddata}"
-        if field_type == "VALUE" && is_typeddata
+        if result && !right_value.include?('rb_check_typeddata')
           puts "        WRITEBARRIER on fire"
           @wb_list.add(left_value, right_value, line_number)
         end
@@ -236,7 +190,7 @@ class Parser
       _vars_in_bscope = vars_in_bscope.dup
       vars_in_scope = Array(_vars_in_bscope).concat(Array($globalv))
       search_expression(child, code, vars_in_scope)
-      when :if_statement, :else_clause
+      when :if_statement, :else_clause, :compound_statement
         search_inside_block(child, code, vars_in_bscope)
       end
 
