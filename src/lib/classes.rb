@@ -1,11 +1,12 @@
 
 class CVar
-  attr_accessor :type, :name, :pointer_count
+  attr_accessor :type, :name, :pointer_count, :is_typeddata
 
   def initialize(type, name, pointer_count)
     @type = type
     @name = name
     @pointer_count = pointer_count
+    @is_typeddata = false
   end
 
   def is_pointer?
@@ -19,7 +20,6 @@ end
 
 def find_cvar(vars_in_scope, name)
   vars_in_scope.each do |var|
-    p var
     return var if var.name == name
   end
 

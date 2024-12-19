@@ -22,16 +22,15 @@ class Parser
       name.gsub!(/[\(\)\*]/, '')
       puts "name: #{name}"
       cvar = find_cvar(vars_in_scope, name)
-      return {cvar: cvar, is_gc_managed: false, field_type: cvar.type}
+      return {cvar: cvar, is_typeddata: false, field_type: cvar.type}
     when :pointer_expression
       child = node.child_by_field_name('argument')
       left_result = process_lhs(child, code, vars_in_scope)
 
       cvar = left_result[:cvar]
-      # is_gc_managed = left_result[:is_gc_managed]
-      is_gc_managed = true
+      is_typeddata = true
 
-      return {cvar: cvar, is_gc_managed: is_gc_managed, field_type: cvar.type}
+      return {cvar: cvar, is_typeddata: is_typeddata, field_type: cvar.type}
     when :field_expression
       receiver = node.child_by_field_name('argument')
       field = node.child_by_field_name('field')
@@ -41,7 +40,7 @@ class Parser
 
       left_result = process_lhs(receiver, code, vars_in_scope)
       cvar = left_result[:cvar]
-      is_gc_managed = left_result[:is_gc_managed]
+      is_typeddata = left_result[:is_typeddata]
 
       field = $struct_definitions.find_field(normalize_type_name(cvar.type), field_name)
       if field.nil?
@@ -56,22 +55,22 @@ class Parser
 
       # 暫定的に '->' の時はライトバリアが必要とみなす
       if operator_name == '->'
-        is_gc_managed = true
+        is_typeddata = true
         pointer_count = cvar.pointer_count + 1
       else
-        is_gc_managed = left_result[:is_gc_managed]
+        is_typeddata = left_result[:is_typeddata]
         pointer_count = cvar.pointer_count
       end
-      return {cvar: CVar.new(field_type, field_name, pointer_count), is_gc_managed: is_gc_managed, field_type: field_type}
+      return {cvar: CVar.new(field_type, field_name, pointer_count), is_typeddata: is_typeddata, field_type: field_type}
 
     when :subscript_expression
       array_node = node.child_by_field_name('argument')
       array_code = code[array_node.start_byte...array_node.end_byte]
       left_result = process_lhs(array_node, code, vars_in_scope)
       cvar = left_result[:cvar]
-      is_gc_managed = true
+      is_typeddata = true
 
-      return {cvar: cvar, is_gc_managed: is_gc_managed, field_type: cvar.type}
+      return {cvar: cvar, is_typeddata: is_typeddata, field_type: cvar.type}
     when :parenthesized_expression
       inner = node.named_child(0)
       return process_lhs(inner, code, vars_in_scope)
@@ -79,7 +78,7 @@ class Parser
       func_node = node.child_by_field_name('function')
       func_name = code[func_node.start_byte...func_node.end_byte]
       frt = $functions_ret_type.find_by_fname(func_name)
-      return {cvar: CVar.new(frt.type, frt.name, frt.pointer_count), is_gc_managed: false, field_type: frt.type}
+      return {cvar: CVar.new(frt.type, frt.name, frt.pointer_count), is_typeddata: false, field_type: frt.type}
     else
       puts "未対応のノードタイプ: #{node.type}"
       exit
@@ -167,53 +166,79 @@ class Parser
 
   # 3rd depth
   # check :expression
-  def search_expression(node, code, vars_in_fscope)
-    vars_in_scope = Array(vars_in_fscope).concat(Array($globalv))
+  def search_expression(node, code, vars_in_scope)
     node.each_named do |child|
-      next unless child.type == :assignment_expression
-
-      puts child
-      left = child.child_by_field_name('left')
-      left_value = code[left.start_byte...left.end_byte]
-      line_number = child.start_point.row + 1
-      puts "        line: #{line_number}"
-      puts left
-
-      analyzed_lhs_info = process_lhs(left, code, vars_in_scope)
-      cvar = analyzed_lhs_info[:cvar]
-      is_gc_managed = analyzed_lhs_info[:is_gc_managed]
-      field_type = analyzed_lhs_info[:field_type]
-
-      if cvar.nil?
-        puts "couldn't find variable while analyze expression"
-        exit
-      end
-
-      puts "field_type: #{field_type}, is_gc_managed: #{is_gc_managed}"
-      if field_type == "VALUE" && is_gc_managed
-        puts "        WRITEBARRIER on fire"
+      if child.type == :assignment_expression
+        puts child
         right = child.child_by_field_name('right')
         right_value = code[right.start_byte...right.end_byte]
-        @wb_list.add(left_value, right_value, line_number)
+        left = child.child_by_field_name('left')
+        left_value = code[left.start_byte...left.end_byte]
+        left = child.child_by_field_name('left')
+        left_value = code[left.start_byte...left.end_byte]
+        line_number = child.start_point.row + 1
+        puts "        line: #{line_number}"
+
+        if right_value.include?('rb_check_typeddata')
+          left_value.gsub!(/[\(\)\*]/, '')
+          puts left_value
+          cvar = find_cvar(vars_in_scope, left_value) 
+          cvar.is_typeddata = true
+        end
+
+        analyzed_lhs_info = process_lhs(left, code, vars_in_scope)
+        cvar = analyzed_lhs_info[:cvar]
+        is_typeddata = analyzed_lhs_info[:is_typeddata]
+        field_type = analyzed_lhs_info[:field_type]
+
+        if cvar.nil?
+          puts "couldn't find variable while analyze expression"
+          exit
+        end
+
+        puts "field_type: #{field_type}, is_typeddata: #{is_typeddata}"
+        if field_type == "VALUE" && is_typeddata
+          puts "        WRITEBARRIER on fire"
+          @wb_list.add(left_value, right_value, line_number)
+        end
+      else
+        search_expression(child, code, vars_in_scope)
       end
     end
   end
 
+
   # 2nd depth
-  # check child node of :compound_statement
-  def search_compound_statement(node, code, vars_in_fscope)
+  # check child node of :compound_statement, if, while, etc
+  def search_inside_block(node, code, _vars_in_bscope)
+
+    #  to not interfere the original array
+    vars_in_bscope = _vars_in_bscope.dup
     node.each do |child|
-      puts "    compound_statement's child: #{child.type}"
+      puts "    inside block: #{child.type}"
+
+      case child.type
 
       # find the part of defining Variable
-      if child.type == :declaration
-        @number_of_found_declarator += 1
-        vars = search_declaration(child, code)
-        vars_in_fscope.concat(vars)
+      when :declaration
+      vars = search_declaration(child, code)
+
+=begin
+      # if already there is the same element to vars, delete it for update
+      vars.each do |va|
+        vars_in_bscope.delete_if{|v| v.name = va.name}
       end
+=end
+      vars_in_bscope.concat(vars)
 
       # find the part of Expression
-      search_expression(child, code, vars_in_fscope) if child.type == :expression_statement
+      when :expression_statement
+      _vars_in_bscope = vars_in_bscope.dup
+      vars_in_scope = Array(_vars_in_bscope).concat(Array($globalv))
+      search_expression(child, code, vars_in_scope)
+      when :if_statement, :else_clause
+        search_inside_block(child, code, vars_in_bscope)
+      end
 
     end
   end
@@ -270,8 +295,8 @@ class Parser
   # check child node of :function_children
   def search_function(node, code)
 
-    # 関数スコープ内にある変数と関数の引数を管理、ブロック内の変数などのスコープ管理はまだ
-    vars_in_fscope = []
+    # 関数スコープ内にある変数を管理
+    vars_in_bscope = []
     puts node
     node.each_named do |child|
       puts "  Function's child: #{child.type}"
@@ -292,11 +317,11 @@ class Parser
       when :function_declarator
         puts "  function_declarator's child: #{child}"
         args = search_function_declarator(child, code)
-        vars_in_fscope.concat(Array(args))
+        vars_in_bscope.concat(Array(args))
 
       # deep into Function Body
       when :compound_statement
-        search_compound_statement(child, code, vars_in_fscope)
+        search_inside_block(child, code, vars_in_bscope)
       end
     end
 
