@@ -20879,11 +20879,7 @@ d_lite_initialize_copy(VALUE copy, VALUE date)
  union DateData *adat, *bdat; ((adat) = ((union DateData *)rb_check_typeddata((copy), (&d_lite_type)))); ((bdat) = ((union DateData *)rb_check_typeddata((date), (&d_lite_type))));;
  if ((!((bdat)->flags & (1 << 7)))) {
      if ((!((adat)->flags & (1 << 7)))) {
-  adat->s = bdat->s;
-     }
-     else {
-  adat->c.flags = bdat->s.flags | (1 << 7);
-  adat->c.nth = bdat->s.nth;
+  adat->c.nthb= bdat->s.nth;
   adat->c.jd = bdat->s.jd;
   adat->c.df = 0;
   adat->c.sf = __builtin_choose_expr( __builtin_constant_p(0), ((VALUE)(0)) << 1 | RUBY_FIXNUM_FLAG, RB_INT2FIX(0));

@@ -142,6 +142,7 @@ class WriteBarrierList
     @list.each do |w|
       w.inspect
     end
+    puts "number: #{@list.size}"
   end
 end
 

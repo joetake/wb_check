@@ -40,7 +40,7 @@ class Parser
     when :parenthesized_expression
       inner = node.named_child(0)
       return process_lhs(inner, code, vars_in_scope)
-    when :call_expression
+    when :call_expression, :cast_expression
       return false
     else
       puts "未対応のノードタイプ: #{node.type}"
@@ -145,7 +145,7 @@ class Parser
         if right_value.include?('rb_check_typeddata')
           left_value.gsub!(/[\(\)\*]/, '')
           puts left_value
-          cvar = find_cvar(vars_in_scope, left_value) 
+          cvar = find_cvar(vars_in_scope, left_value)
           cvar.is_typeddata = true
         end
 
