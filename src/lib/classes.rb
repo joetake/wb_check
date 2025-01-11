@@ -48,6 +48,15 @@ class StructDefinitions
     nil
   end
 
+  def has_VALUE_element?(struct_name)
+    @list.each do |struct_definition|
+      if struct_definition.name == struct_name
+        return struct_definition.has_VALUE_element?(field_name)
+      end
+    end
+    false
+  end
+
   def inspect()
     if @list.size == 0
       puts "no Struct registered"
@@ -73,6 +82,15 @@ class StructDefinition
       end
     end
     nil
+  end
+
+  def has_VALUE_element?
+    @fields.each do |cvar|
+      if cvar.type == 'VALUE'
+        return true
+      end
+    end
+    false
   end
 
   def inspect()

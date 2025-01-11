@@ -16,22 +16,57 @@ class Parser
   end
 
   def process_lhs(node, code, vars_in_scope)
+    puts node.type
     case node.type
     when :identifier
       name = code[node.start_byte...node.end_byte]
       name.gsub!(/[\(\)\*]/, '')
       puts "name: #{name}"
       cvar = find_cvar(vars_in_scope, name)
-      return cvar.is_typeddata
+      type_name = cvar.type
+      if type_name.split(' ').size > 1
+        type_name = type_name.split(' ').last
+      end
+      return {type_name: type_name, is_typeddata: cvar.is_typeddata, needWB: false}
     when :pointer_expression
       child = node.child_by_field_name('argument')
       result = process_lhs(child, code, vars_in_scope)
 
       return result
     when :field_expression
-      receiver = node.child_by_field_name('argument')
-      result = process_lhs(receiver, code, vars_in_scope)
-      return result
+      argument = node.child_by_field_name('argument')
+      field = node.child_by_field_name('field')
+      argument_info = process_lhs(argument, code, vars_in_scope)
+
+      # check field
+      field_info = nil
+      if field.type == :field_identifier
+        puts "a"
+        field_name = code[field.start_byte...field.end_byte]
+        puts "#{argument_info[:type_name]}, #{field_name}"
+        field_cvar = $struct_definitions.find_field(argument_info[:type_name], field_name)
+        field_info = {type_name: field_cvar.type, is_typeddata: false, needWB: false}
+      else
+        puts "b"
+        field_info = process_lhs(field, code, vars_in_scope)
+        # if field expression in field is needWB: true return immediately
+        return field_info if field_info[:needWB]
+      end
+
+      # check WBneed or not
+      if field_info[:type_name] == 'VALUE'
+        return {type_name: 'VALUE', is_typeddata: false, needWB: argument_info[:is_typeddata]}
+      else
+        # check struct in field has VALUE element or not
+        has_VALUE_element = $struct_definitions.has_VALUE_element?(field_info[:type_name])
+        # if it isn't struct return as needWB: false
+        unless has_VALUE_element
+          puts "hasn't VALUE element"
+          return {type_name: nil, is_typeddata: false, needWB: false}
+        end
+
+        return {type_name: nil, is_typeddata: true, needWB: true}
+      end
 
     when :subscript_expression
       array_node = node.child_by_field_name('argument')
@@ -41,9 +76,10 @@ class Parser
       inner = node.named_child(0)
       return process_lhs(inner, code, vars_in_scope)
     when :call_expression, :cast_expression
-      return false
+      return {type_name: nil, is_typeddata: false, needWB: false}
     else
       puts "未対応のノードタイプ: #{node.type}"
+      puts node
       exit
     end
   end
@@ -151,7 +187,7 @@ class Parser
 
         result = process_lhs(left, code, vars_in_scope)
 
-        if result && !right_value.include?('rb_check_typeddata')
+        if result[:needWB] && !right_value.include?('rb_check_typeddata')
           puts "        WRITEBARRIER on fire"
           @wb_list.add(left_value, right_value, line_number)
         end
