@@ -8,6 +8,9 @@ $functions_ret_type = FunctionsRetType.new
 $grobalv = Array.new
 
 class Parser
+  LHS_NIL_RESULT = {type_name: nil, is_typeddata: false, needWB: false}
+  LHS_WB_RESULT = {type_name: nil, is_typeddata: true, needWB: true}
+
   def initialize(path_to_source, path_to_parser)
     @path_to_source = path_to_source
     @path_to_parser = path_to_parser
@@ -36,7 +39,12 @@ class Parser
     when :field_expression
       argument = node.child_by_field_name('argument')
       field = node.child_by_field_name('field')
+      puts "argument: #{argument}"
       argument_info = process_lhs(argument, code, vars_in_scope)
+
+      unless argument_info[:is_typeddata]
+        return LHS_NIL_RESULT
+      end
 
       # check field
       field_info = nil
@@ -53,19 +61,25 @@ class Parser
         return field_info if field_info[:needWB]
       end
 
+      new_type_name = normalize_type_name(field_info[:type_name])
       # check WBneed or not
-      if field_info[:type_name] == 'VALUE'
+      if new_type_name == 'VALUE'
         return {type_name: 'VALUE', is_typeddata: false, needWB: argument_info[:is_typeddata]}
       else
+
         # check struct in field has VALUE element or not
-        has_VALUE_element = $struct_definitions.has_VALUE_element?(field_info[:type_name])
+        puts "field_type: #{new_type_name}"
+        has_VALUE_element = $struct_definitions.has_VALUE_element?(new_type_name)
+        puts "hash_VALUE_element?: #{has_VALUE_element}"
+
         # if it isn't struct return as needWB: false
         unless has_VALUE_element
           puts "hasn't VALUE element"
-          return {type_name: nil, is_typeddata: false, needWB: false}
+          return {type_name: new_type_name, is_typeddata: argument_info[:is_typeddata], needWB: false}
         end
 
-        return {type_name: nil, is_typeddata: true, needWB: true}
+        puts "ok"
+        return {type_name: new_type_name, is_typeddata: true, needWB: true}
       end
 
     when :subscript_expression
@@ -76,7 +90,7 @@ class Parser
       inner = node.named_child(0)
       return process_lhs(inner, code, vars_in_scope)
     when :call_expression, :cast_expression
-      return {type_name: nil, is_typeddata: false, needWB: false}
+      return LHS_NIL_RESULT
     else
       puts "未対応のノードタイプ: #{node.type}"
       puts node
@@ -186,6 +200,7 @@ class Parser
         end
 
         result = process_lhs(left, code, vars_in_scope)
+        puts "result: #{result}"
 
         if result[:needWB] && !right_value.include?('rb_check_typeddata')
           puts "        WRITEBARRIER on fire"

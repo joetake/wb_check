@@ -51,7 +51,7 @@ class StructDefinitions
   def has_VALUE_element?(struct_name)
     @list.each do |struct_definition|
       if struct_definition.name == struct_name
-        return struct_definition.has_VALUE_element?(field_name)
+        return struct_definition.has_VALUE_element?
       end
     end
     false
