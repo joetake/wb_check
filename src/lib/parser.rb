@@ -11,11 +11,27 @@ class Parser
   LHS_NIL_RESULT = {type_name: nil, is_typeddata: false, needWB: false}
   LHS_WB_RESULT = {type_name: nil, is_typeddata: true, needWB: true}
 
+
   def initialize(path_to_source, path_to_parser)
     @path_to_source = path_to_source
     @path_to_parser = path_to_parser
     @number_of_found_declarator = 0
     @wb_list = WriteBarrierList.new
+  end
+
+  # find rb_check_typeddata()'s node recursively , return found node
+  def find_typedthing_call(node, code)
+    call = nil
+    node.each_named do |child|
+      str = code[child.start_byte...child.end_byte]
+      if child.named_child_count > 0
+      call = find_typedthing_call(child, code)
+      end
+      if child.type == :call_expression && str.include?('rb_check_typeddata')
+        call = child
+      end
+    end
+    return call
   end
 
   def process_lhs(node, code, vars_in_scope)
@@ -97,7 +113,7 @@ class Parser
       exit
     end
   end
-
+  
   # check :declaration, return defined variables or fields
   def search_declaration(node, code)
     vars = []
@@ -193,10 +209,25 @@ class Parser
         puts "        line: #{line_number}"
 
         if right_value.include?('rb_check_typeddata')
+
+          # find T_DATA struct
           left_value.gsub!(/[\(\)\*]/, '')
-          puts left_value
           cvar = find_cvar(vars_in_scope, left_value)
+
+          if cvar.nil?
+            puts "search_expression(): cvar not found"
+            exit
+          end
           cvar.is_typeddata = true
+
+          # find parent obj
+          call = find_typedthing_call(right, code)
+          arguments = call.child_by_field_name('arguments')
+          first_arg = arguments.named_child(0)
+          parent_obj = code[first_arg.start_byte...first_arg.end_byte]
+          puts parent_obj
+
+          cvar.parent_obj = parent_obj
         end
 
         result = process_lhs(left, code, vars_in_scope)
@@ -204,7 +235,8 @@ class Parser
 
         if result[:needWB] && !right_value.include?('rb_check_typeddata')
           puts "        WRITEBARRIER on fire"
-          @wb_list.add(left_value, right_value, line_number)
+
+          @wb_list.add(left, left_value, right_value, line_number, vars_in_scope)
         end
       else
         search_expression(child, code, vars_in_scope)
@@ -259,7 +291,7 @@ class Parser
       # the part of arguments
       case child.type
       when :parameter_list
-       if child.named_child_count == 1
+        if child.named_child_count == 1
           declaration_node = child.named_child(0)
           type_node = declaration_node.child_by_field_name('type')
           puts type_node.type
@@ -360,7 +392,6 @@ class Parser
       struct_definition = StructDefinition.new(type_name, field_list)
       $struct_definitions.register(struct_definition)
 
-    #
     else
       return
     end
@@ -440,6 +471,7 @@ class Parser
 
     # show result
     @wb_list.inspect
+    @wb_list.debug_sample
     puts "success"
   end
 end

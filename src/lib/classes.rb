@@ -1,12 +1,18 @@
 
+def normalize_type_name(type_name)
+  type_name.sub(/^union\s+/, '')
+           .sub(/^struct\s+/, '')
+           .sub(/^enum\s+/, '')
+end
 class CVar
-  attr_accessor :type, :name, :pointer_count, :is_typeddata
+  attr_accessor :type, :name, :pointer_count, :is_typeddata, :parent_obj
 
   def initialize(type, name, pointer_count)
     @type = type
     @name = name
     @pointer_count = pointer_count
     @is_typeddata = false
+    @parent_obj = nil
   end
 
   def is_pointer?
@@ -133,15 +139,17 @@ class FunctionRetType
 end
 
 class WriteBarrier
-  attr_accessor :old, :new, :line_number
-  def initialize(old, new, line_number)
-    @old = old
-    @new = new
+  attr_accessor :left_node, :left_value, :right_value, :line_number, :vars_in_scope
+  def initialize(left_node, left_value, right_value, line_number, vars_in_scope)
+    @left_node = left_node
+    @left_value = left_value 
+    @right_value = right_value
     @line_number = line_number
+    @vars_in_scope = vars_in_scope
   end
 
   def inspect
-    puts "old: #{@old}, new: #{@new}, line_number: #{@line_number}"
+    puts "left_value: #{@left_value}, right_value: #{@right_value}, line_number: #{@line_number}"
   end
 end
 
@@ -151,8 +159,8 @@ class WriteBarrierList
     @list = Array.new
   end
 
-  def add(old, new, line_number)
-    @list << WriteBarrier.new(old, new, line_number)
+  def add(left_node, left_value, right_value, line_number, vars_in_scope)
+    @list << WriteBarrier.new(left_node, left_value, right_value, line_number, vars_in_scope)
   end
 
   def inspect()
@@ -162,10 +170,27 @@ class WriteBarrierList
     end
     puts "number: #{@list.size}"
   end
+  
+  def debug_sample()
+    @list.each do |w|
+      left_value = w.left_value
+      left_value.gsub!(/[\(\)\*]/, '')
+      data = left_value.split('->')[0]
+      cvar = find_cvar(w.vars_in_scope, data)
+      if cvar.nil?
+        puts "while write barrrier insertion(): cvar not found"
+        exit
+      end
+
+      # それぞれの引数
+      old = "(VALUE)#{cvar.parent_obj}"
+      oldv = '(VALUE)(((VALUE)RUBY_Qundef))'
+      young = left_value
+      filename = '"auto_insertion"'
+      line = -1
+
+      puts "line #{w.line_number }: rb_obj_written(#{old}, #{oldv}, #{young}, #{filename}, #{line})"
+    end
+  end
 end
 
-def normalize_type_name(type_name)
-  type_name.sub(/^union\s+/, '')
-           .sub(/^struct\s+/, '')
-           .sub(/^enum\s+/, '')
-end
