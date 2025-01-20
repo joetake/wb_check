@@ -110,11 +110,15 @@ end
 
 class FunctionsRetType
   def initialize()
-    @TypeInfo = []
+    @list = []
   end
 
   def register(name, type, pointer_count)
-    @TypeInfo << FunctionRetType.new(name, type, pointer_count)
+    @list << FunctionRetType.new(name, type, pointer_count)
+  end
+
+  def include?(fname)
+    @list.any? {|f| f.name == fname}
   end
 
   def find_by_fname(fname)
@@ -126,6 +130,12 @@ class FunctionsRetType
       end
     end
     nil
+  end
+
+  def inspect
+    @list.each do |f|
+      puts "ret_type: #{f.name}, #{f.type}, #{f.pointer_count}"
+    end
   end
 end
 

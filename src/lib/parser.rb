@@ -252,7 +252,8 @@ class Parser
     #  to not interfere the original array
     vars_in_bscope = _vars_in_bscope.dup
     node.each do |child|
-      puts "    inside block: #{child.type}"
+      line_number = child.start_point.row + 1
+      puts "line: #{line_number}, inside block: #{child.type}"
 
       case child.type
 
@@ -273,7 +274,7 @@ class Parser
       _vars_in_bscope = vars_in_bscope.dup
       vars_in_scope = Array(_vars_in_bscope).concat(Array($globalv))
       search_expression(child, code, vars_in_scope)
-      when :if_statement, :else_clause, :compound_statement
+      when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
         search_inside_block(child, code, vars_in_bscope)
       end
 
@@ -329,7 +330,7 @@ class Parser
   end
 
   # 1st depth
-  # check child node of :function_children
+  # check child node of :function_definition
   def search_function(node, code)
 
     # 関数スコープ内にある変数を管理
@@ -345,10 +346,31 @@ class Parser
         pointer_count = type_str.count('*')
         type_str.delete!('*')
         f_declarator = node.child_by_field_name('declarator')
-        f_identifier = f_declarator.child(0)
-        f_name = code[f_identifier.start_byte...f_identifier.end_byte]
+
+        # pointer_declaratorがネストしている場合があるので降りていく
+        while f_declarator && f_declarator.type == :pointer_declarator
+          pointer_count += 1  # “char *” が更に “*” 等で深い階層にある場合
+          # 次の段階へ潜る
+          f_declarator = f_declarator.child_by_field_name('declarator')
+        end
+
+        # 3) f_declarator 下から実際のidentifierを取得
+        if f_declarator
+          # もし function_declarator ならさらに同様に潜る
+          while f_declarator.type == :function_declarator
+            f_declarator = f_declarator.child_by_field_name('declarator')
+          end
+        end
+
+        if f_declarator
+        f_name = code[f_declarator.start_byte...f_declarator.end_byte]
+        f_name.strip!
+        if $functions_ret_type.include?(f_name)
+          next
+        end
         $functions_ret_type.register(f_name, type_str, pointer_count)
         puts $functions_ret_type
+        end
 
       # deep into Function Declarator
       when :function_declarator
@@ -450,7 +472,7 @@ class Parser
 
     # check children nodes of root
     puts '==================================='
-    root.each do |child|
+    root.each_named do |child|
       line_number = child.start_point.row + 1
       puts "line #{line_number} child node type: #{child.type}"
 
