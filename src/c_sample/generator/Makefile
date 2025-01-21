@@ -11,16 +11,14 @@ ECHO = $(ECHO1:0=@ echo)
 NULLCMD = :
 
 #### Start of system configuration section. ####
-top_srcdir = $(topdir)/.
-srcdir = $(top_srcdir)/ext/json/generator
-topdir = ../../..
-hdrdir = $(top_srcdir)/include
-arch_hdrdir = $(extout)/include/$(arch)
+
+srcdir = .
+topdir = /home/joe/.rbenv/versions/3.3.0/include/ruby-3.3.0
+hdrdir = $(topdir)
+arch_hdrdir = /home/joe/.rbenv/versions/3.3.0/include/ruby-3.3.0/x86_64-linux
 PATH_SEPARATOR = :
 VPATH = $(srcdir):$(arch_hdrdir)/ruby:$(hdrdir)/ruby
-RUBYLIB =
-RUBYOPT = -
-prefix = $(DESTDIR)/usr/local
+prefix = $(DESTDIR)/home/joe/.rbenv/versions/3.3.0
 rubysitearchprefix = $(rubylibprefix)/$(sitearch)
 rubyarchprefix = $(rubylibprefix)/$(arch)
 rubylibprefix = $(libdir)/$(RUBY_BASE_NAME)
@@ -44,7 +42,6 @@ archincludedir = $(includedir)/$(arch)
 sitearchlibdir = $(libdir)/$(sitearch)
 archlibdir = $(libdir)/$(arch)
 ridir = $(datarootdir)/$(RI_BASE_NAME)
-shared_gc_dir = $(DESTDIR)
 mandir = $(datarootdir)/man
 localedir = $(datarootdir)/locale
 libdir = $(exec_prefix)/lib
@@ -71,37 +68,35 @@ archdir = $(rubyarchdir)
 CC_WRAPPER = 
 CC = gcc
 CXX = g++
-LIBRUBY = $(LIBRUBY_A)
+LIBRUBY = $(LIBRUBY_SO)
 LIBRUBY_A = lib$(RUBY_SO_NAME)-static.a
-LIBRUBYARG_SHARED = -Wl,-rpath,$(libdir) 
-LIBRUBYARG_STATIC = -Wl,-rpath,$(libdir) -l$(RUBY_SO_NAME)-static $(MAINLIBS)
+LIBRUBYARG_SHARED = -Wl,-rpath,$(libdir) -L$(libdir) -l$(RUBY_SO_NAME)
+LIBRUBYARG_STATIC = -Wl,-rpath,$(libdir) -L$(libdir) -l$(RUBY_SO_NAME)-static $(MAINLIBS)
 empty =
 OUTFLAG = -o $(empty)
 COUTFLAG = -o $(empty)
 CSRCFLAG = $(empty)
 
-RUBY_EXTCONF_H = extconf.h
-cflags   = $(hardenflags)  $(optflags) $(debugflags) $(warnflags)
+RUBY_EXTCONF_H = 
+cflags   = $(optflags) $(debugflags) $(warnflags)
 cxxflags = 
 optflags = -O3 -fno-fast-math
 debugflags = -ggdb3
 warnflags = -Wall -Wextra -Wdeprecated-declarations -Wdiv-by-zero -Wduplicated-cond -Wimplicit-function-declaration -Wimplicit-int -Wpointer-arith -Wwrite-strings -Wold-style-definition -Wimplicit-fallthrough=0 -Wmissing-noreturn -Wno-cast-function-type -Wno-constant-logical-operand -Wno-long-long -Wno-missing-field-initializers -Wno-overlength-strings -Wno-packed-bitfield-compat -Wno-parentheses-equality -Wno-self-assign -Wno-tautological-compare -Wno-unused-parameter -Wno-unused-value -Wsuggest-attribute=format -Wsuggest-attribute=noreturn -Wunused-variable -Wmisleading-indentation -Wundef
 cppflags = 
 CCDLFLAGS = -fPIC
-CFLAGS   = $(CCDLFLAGS) $(cflags) $(ARCH_FLAG)
-INCFLAGS = -I. -I$(arch_hdrdir) -I$(hdrdir) -I$(srcdir)
+CFLAGS   = $(CCDLFLAGS) $(cflags)  -fPIC -std=c99 $(ARCH_FLAG)
+INCFLAGS = -I. -I$(arch_hdrdir) -I$(hdrdir)/ruby/backward -I$(hdrdir) -I$(srcdir)
 DEFS     = 
-CPPFLAGS = -DRUBY_EXTCONF_H=\"$(RUBY_EXTCONF_H)\"  $(DEFS) $(cppflags)
+CPPFLAGS = -DJSON_GENERATOR  $(DEFS) $(cppflags)
 CXXFLAGS = $(CCDLFLAGS)  $(ARCH_FLAG)
-ldflags  = -L. -fstack-protector-strong -rdynamic -Wl,-export-dynamic
+ldflags  = -L. -fstack-protector-strong -rdynamic -Wl,-export-dynamic -Wl,--no-as-needed
 dldflags = -Wl,--compress-debug-sections=zlib 
 ARCH_FLAG = 
 DLDFLAGS = $(ldflags) $(dldflags) $(ARCH_FLAG)
 LDSHARED = $(CC) -shared
 LDSHAREDXX = $(CXX) -shared
-POSTLINK = :
 AR = gcc-ar
-LD = ld
 EXEEXT = 
 
 RUBY_INSTALL_NAME = $(RUBY_BASE_NAME)
@@ -113,11 +108,11 @@ RUBY_BASE_NAME = ruby
 
 arch = x86_64-linux
 sitearch = $(arch)
-ruby_version = 3.4.0+0
-ruby = $(topdir)/miniruby -I'$(topdir)' -I'$(top_srcdir)/lib' -I'$(extout)/$(arch)' -I'$(extout)/common'
+ruby_version = 3.3.0
+ruby = $(bindir)/$(RUBY_BASE_NAME)
 RUBY = $(ruby)
-BUILTRUBY = $(topdir)/miniruby
-ruby_headers = $(hdrdir)/ruby.h $(hdrdir)/ruby/backward.h $(hdrdir)/ruby/ruby.h $(hdrdir)/ruby/defines.h $(hdrdir)/ruby/missing.h $(hdrdir)/ruby/intern.h $(hdrdir)/ruby/st.h $(hdrdir)/ruby/subst.h $(arch_hdrdir)/ruby/config.h $(RUBY_EXTCONF_H)
+BUILTRUBY = $(bindir)/$(RUBY_BASE_NAME)
+ruby_headers = $(hdrdir)/ruby.h $(hdrdir)/ruby/backward.h $(hdrdir)/ruby/ruby.h $(hdrdir)/ruby/defines.h $(hdrdir)/ruby/missing.h $(hdrdir)/ruby/intern.h $(hdrdir)/ruby/st.h $(hdrdir)/ruby/subst.h $(arch_hdrdir)/ruby/config.h
 
 RM = rm -f
 RM_RF = rm -fr
@@ -132,47 +127,46 @@ TOUCH = exit >
 #### End of system configuration section. ####
 
 preload = 
-EXTSO = 
-libpath = . $(topdir)
-LIBPATH =  -L. -L$(topdir)
+libpath = . $(libdir)
+LIBPATH =  -L. -L$(libdir) -Wl,-rpath,$(libdir)
 DEFFILE = 
 
 CLEANFILES = mkmf.log
 DISTCLEANFILES = 
 DISTCLEANDIRS = 
 
-extout = $(topdir)/.ext
-extout_prefix = $(extout)$(target_prefix)/
+extout = 
+extout_prefix = 
 target_prefix = /json/ext
 LOCAL_LIBS = 
-LIBS =   -lm -lpthread  -lc
+LIBS = $(LIBRUBYARG_SHARED)  -lm -lpthread  -lc
 ORIG_SRCS = generator.c
 SRCS = $(ORIG_SRCS) 
 OBJS = generator.o
-HDRS = $(srcdir)/generator.h
+HDRS = 
 LOCAL_HDRS = 
 TARGET = generator
 TARGET_NAME = generator
 TARGET_ENTRY = Init_$(TARGET_NAME)
 DLLIB = $(TARGET).so
 EXTSTATIC = 
-STATIC_LIB = $(TARGET).a
+STATIC_LIB = 
 
-TIMESTAMP_DIR = $(extout)/.timestamp
-BINDIR        = $(extout)/bin
-RUBYCOMMONDIR = $(extout)/common
-RUBYLIBDIR    = $(RUBYCOMMONDIR)$(target_prefix)
-RUBYARCHDIR   = $(extout)/$(arch)$(target_prefix)
-HDRDIR        = $(extout)/include/ruby$(target_prefix)
-ARCHHDRDIR    = $(extout)/include/$(arch)/ruby$(target_prefix)
-TARGET_SO_DIR = $(RUBYARCHDIR)/
+TIMESTAMP_DIR = .
+BINDIR        = $(bindir)
+RUBYCOMMONDIR = $(sitedir)$(target_prefix)
+RUBYLIBDIR    = $(sitelibdir)$(target_prefix)
+RUBYARCHDIR   = $(sitearchdir)$(target_prefix)
+HDRDIR        = $(sitehdrdir)$(target_prefix)
+ARCHHDRDIR    = $(sitearchhdrdir)$(target_prefix)
+TARGET_SO_DIR =
 TARGET_SO     = $(TARGET_SO_DIR)$(DLLIB)
 CLEANLIBS     = $(TARGET_SO) false
-CLEANOBJS     = $(OBJS) $(OBJS:.o=.bc) $(OBJS:.o=.i) $(OBJS:.o=.s) *.bak
-TARGET_SO_DIR_TIMESTAMP = $(TIMESTAMP_DIR)/$(arch)/.json.-.ext.time
+CLEANOBJS     = $(OBJS) *.bak
+TARGET_SO_DIR_TIMESTAMP = $(TIMESTAMP_DIR)/.sitearchdir.-.json.-.ext.time
 
-all:    install
-static: all
+all:    $(DLLIB)
+static: $(STATIC_LIB)
 .PHONY: all install static install-so install-rb
 .PHONY: clean clean-so clean-static clean-rb
 
@@ -188,18 +182,15 @@ distclean-rb::
 distclean-so::
 distclean-static::
 distclean: clean distclean-so distclean-static distclean-rb-default distclean-rb
-		-$(Q)$(RM) Makefile $(RUBY_EXTCONF_H) conftest.* mkmf.log exts.mk
+		-$(Q)$(RM) Makefile $(RUBY_EXTCONF_H) conftest.* mkmf.log
 		-$(Q)$(RM) core ruby$(EXEEXT) *~ $(DISTCLEANFILES)
 		-$(Q)$(RMDIRS) $(DISTCLEANDIRS) 2> /dev/null || true
 
 realclean: distclean
 install: install-so install-rb
 
-install-so: $(TARGET_SO)
-clean-so::
-	-$(Q)$(RM) $(TARGET_SO) $(TARGET_SO_DIR_TIMESTAMP)
-	-$(Q)$(RM_RF) $(CLEANLIBS)
-	-$(Q)$(RMDIRS) $(TARGET_SO_DIR) 2> /dev/null || true
+install-so: $(DLLIB) $(TARGET_SO_DIR_TIMESTAMP)
+	$(INSTALL_PROG) $(DLLIB) $(RUBYARCHDIR)
 clean-static::
 	-$(Q)$(RM) $(STATIC_LIB)
 install-rb: pre-install-rb do-install-rb install-rb-default
@@ -211,7 +202,7 @@ do-install-rb-default:
 pre-install-rb-default:
 	@$(NULLCMD)
 $(TARGET_SO_DIR_TIMESTAMP):
-	$(Q) $(MAKEDIRS) $(@D) $(TARGET_SO_DIR)
+	$(Q) $(MAKEDIRS) $(@D) $(RUBYARCHDIR)
 	$(Q) $(TOUCH) $@
 
 site-install: site-install-so site-install-rb
@@ -268,200 +259,12 @@ site-install-rb: install-rb
 	$(ECHO) translating $(<)
 	$(Q) $(CC) $(INCFLAGS) $(CPPFLAGS) $(CFLAGS) $(COUTFLAG)$@ -S $(CSRCFLAG)$<
 
-$(TARGET_SO): $(OBJS) Makefile $(TARGET_SO_DIR_TIMESTAMP)
+$(TARGET_SO): $(OBJS) Makefile
 	$(ECHO) linking shared-object json/ext/$(DLLIB)
 	-$(Q)$(RM) $(@)
 	$(Q) $(LDSHARED) -o $@ $(OBJS) $(LIBPATH) $(DLDFLAGS) $(LOCAL_LIBS) $(LIBS)
-	$(Q) $(POSTLINK)
 
-$(STATIC_LIB): $(OBJS)
-	-$(Q)$(RM) $(@)
-	$(ECHO) linking static-library $(@)
-	$(Q) $(AR) rcD $@ $(OBJS)
-	-$(Q)gcc-ranlib $(@) 2> /dev/null || true
+
 
 ###
-$(OBJS): $(RUBY_EXTCONF_H)
-
-$(OBJS): $(ruby_headers)
-generator.o: generator.c generator.h $(srcdir)/../fbuffer/fbuffer.h
-
-# AUTOGENERATED DEPENDENCIES START
-generator.o: $(RUBY_EXTCONF_H)
-generator.o: $(arch_hdrdir)/ruby/config.h
-generator.o: $(hdrdir)/ruby.h
-generator.o: $(hdrdir)/ruby/assert.h
-generator.o: $(hdrdir)/ruby/backward.h
-generator.o: $(hdrdir)/ruby/backward/2/assume.h
-generator.o: $(hdrdir)/ruby/backward/2/attributes.h
-generator.o: $(hdrdir)/ruby/backward/2/bool.h
-generator.o: $(hdrdir)/ruby/backward/2/inttypes.h
-generator.o: $(hdrdir)/ruby/backward/2/limits.h
-generator.o: $(hdrdir)/ruby/backward/2/long_long.h
-generator.o: $(hdrdir)/ruby/backward/2/stdalign.h
-generator.o: $(hdrdir)/ruby/backward/2/stdarg.h
-generator.o: $(hdrdir)/ruby/defines.h
-generator.o: $(hdrdir)/ruby/encoding.h
-generator.o: $(hdrdir)/ruby/intern.h
-generator.o: $(hdrdir)/ruby/internal/abi.h
-generator.o: $(hdrdir)/ruby/internal/anyargs.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/char.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/double.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/fixnum.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/gid_t.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/int.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/intptr_t.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/long.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/long_long.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/mode_t.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/off_t.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/pid_t.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/short.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/size_t.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/st_data_t.h
-generator.o: $(hdrdir)/ruby/internal/arithmetic/uid_t.h
-generator.o: $(hdrdir)/ruby/internal/assume.h
-generator.o: $(hdrdir)/ruby/internal/attr/alloc_size.h
-generator.o: $(hdrdir)/ruby/internal/attr/artificial.h
-generator.o: $(hdrdir)/ruby/internal/attr/cold.h
-generator.o: $(hdrdir)/ruby/internal/attr/const.h
-generator.o: $(hdrdir)/ruby/internal/attr/constexpr.h
-generator.o: $(hdrdir)/ruby/internal/attr/deprecated.h
-generator.o: $(hdrdir)/ruby/internal/attr/diagnose_if.h
-generator.o: $(hdrdir)/ruby/internal/attr/enum_extensibility.h
-generator.o: $(hdrdir)/ruby/internal/attr/error.h
-generator.o: $(hdrdir)/ruby/internal/attr/flag_enum.h
-generator.o: $(hdrdir)/ruby/internal/attr/forceinline.h
-generator.o: $(hdrdir)/ruby/internal/attr/format.h
-generator.o: $(hdrdir)/ruby/internal/attr/maybe_unused.h
-generator.o: $(hdrdir)/ruby/internal/attr/noalias.h
-generator.o: $(hdrdir)/ruby/internal/attr/nodiscard.h
-generator.o: $(hdrdir)/ruby/internal/attr/noexcept.h
-generator.o: $(hdrdir)/ruby/internal/attr/noinline.h
-generator.o: $(hdrdir)/ruby/internal/attr/nonnull.h
-generator.o: $(hdrdir)/ruby/internal/attr/noreturn.h
-generator.o: $(hdrdir)/ruby/internal/attr/packed_struct.h
-generator.o: $(hdrdir)/ruby/internal/attr/pure.h
-generator.o: $(hdrdir)/ruby/internal/attr/restrict.h
-generator.o: $(hdrdir)/ruby/internal/attr/returns_nonnull.h
-generator.o: $(hdrdir)/ruby/internal/attr/warning.h
-generator.o: $(hdrdir)/ruby/internal/attr/weakref.h
-generator.o: $(hdrdir)/ruby/internal/cast.h
-generator.o: $(hdrdir)/ruby/internal/compiler_is.h
-generator.o: $(hdrdir)/ruby/internal/compiler_is/apple.h
-generator.o: $(hdrdir)/ruby/internal/compiler_is/clang.h
-generator.o: $(hdrdir)/ruby/internal/compiler_is/gcc.h
-generator.o: $(hdrdir)/ruby/internal/compiler_is/intel.h
-generator.o: $(hdrdir)/ruby/internal/compiler_is/msvc.h
-generator.o: $(hdrdir)/ruby/internal/compiler_is/sunpro.h
-generator.o: $(hdrdir)/ruby/internal/compiler_since.h
-generator.o: $(hdrdir)/ruby/internal/config.h
-generator.o: $(hdrdir)/ruby/internal/constant_p.h
-generator.o: $(hdrdir)/ruby/internal/core.h
-generator.o: $(hdrdir)/ruby/internal/core/rarray.h
-generator.o: $(hdrdir)/ruby/internal/core/rbasic.h
-generator.o: $(hdrdir)/ruby/internal/core/rbignum.h
-generator.o: $(hdrdir)/ruby/internal/core/rclass.h
-generator.o: $(hdrdir)/ruby/internal/core/rdata.h
-generator.o: $(hdrdir)/ruby/internal/core/rfile.h
-generator.o: $(hdrdir)/ruby/internal/core/rhash.h
-generator.o: $(hdrdir)/ruby/internal/core/rmatch.h
-generator.o: $(hdrdir)/ruby/internal/core/robject.h
-generator.o: $(hdrdir)/ruby/internal/core/rregexp.h
-generator.o: $(hdrdir)/ruby/internal/core/rstring.h
-generator.o: $(hdrdir)/ruby/internal/core/rstruct.h
-generator.o: $(hdrdir)/ruby/internal/core/rtypeddata.h
-generator.o: $(hdrdir)/ruby/internal/ctype.h
-generator.o: $(hdrdir)/ruby/internal/dllexport.h
-generator.o: $(hdrdir)/ruby/internal/dosish.h
-generator.o: $(hdrdir)/ruby/internal/encoding/coderange.h
-generator.o: $(hdrdir)/ruby/internal/encoding/ctype.h
-generator.o: $(hdrdir)/ruby/internal/encoding/encoding.h
-generator.o: $(hdrdir)/ruby/internal/encoding/pathname.h
-generator.o: $(hdrdir)/ruby/internal/encoding/re.h
-generator.o: $(hdrdir)/ruby/internal/encoding/sprintf.h
-generator.o: $(hdrdir)/ruby/internal/encoding/string.h
-generator.o: $(hdrdir)/ruby/internal/encoding/symbol.h
-generator.o: $(hdrdir)/ruby/internal/encoding/transcode.h
-generator.o: $(hdrdir)/ruby/internal/error.h
-generator.o: $(hdrdir)/ruby/internal/eval.h
-generator.o: $(hdrdir)/ruby/internal/event.h
-generator.o: $(hdrdir)/ruby/internal/fl_type.h
-generator.o: $(hdrdir)/ruby/internal/gc.h
-generator.o: $(hdrdir)/ruby/internal/glob.h
-generator.o: $(hdrdir)/ruby/internal/globals.h
-generator.o: $(hdrdir)/ruby/internal/has/attribute.h
-generator.o: $(hdrdir)/ruby/internal/has/builtin.h
-generator.o: $(hdrdir)/ruby/internal/has/c_attribute.h
-generator.o: $(hdrdir)/ruby/internal/has/cpp_attribute.h
-generator.o: $(hdrdir)/ruby/internal/has/declspec_attribute.h
-generator.o: $(hdrdir)/ruby/internal/has/extension.h
-generator.o: $(hdrdir)/ruby/internal/has/feature.h
-generator.o: $(hdrdir)/ruby/internal/has/warning.h
-generator.o: $(hdrdir)/ruby/internal/intern/array.h
-generator.o: $(hdrdir)/ruby/internal/intern/bignum.h
-generator.o: $(hdrdir)/ruby/internal/intern/class.h
-generator.o: $(hdrdir)/ruby/internal/intern/compar.h
-generator.o: $(hdrdir)/ruby/internal/intern/complex.h
-generator.o: $(hdrdir)/ruby/internal/intern/cont.h
-generator.o: $(hdrdir)/ruby/internal/intern/dir.h
-generator.o: $(hdrdir)/ruby/internal/intern/enum.h
-generator.o: $(hdrdir)/ruby/internal/intern/enumerator.h
-generator.o: $(hdrdir)/ruby/internal/intern/error.h
-generator.o: $(hdrdir)/ruby/internal/intern/eval.h
-generator.o: $(hdrdir)/ruby/internal/intern/file.h
-generator.o: $(hdrdir)/ruby/internal/intern/hash.h
-generator.o: $(hdrdir)/ruby/internal/intern/io.h
-generator.o: $(hdrdir)/ruby/internal/intern/load.h
-generator.o: $(hdrdir)/ruby/internal/intern/marshal.h
-generator.o: $(hdrdir)/ruby/internal/intern/numeric.h
-generator.o: $(hdrdir)/ruby/internal/intern/object.h
-generator.o: $(hdrdir)/ruby/internal/intern/parse.h
-generator.o: $(hdrdir)/ruby/internal/intern/proc.h
-generator.o: $(hdrdir)/ruby/internal/intern/process.h
-generator.o: $(hdrdir)/ruby/internal/intern/random.h
-generator.o: $(hdrdir)/ruby/internal/intern/range.h
-generator.o: $(hdrdir)/ruby/internal/intern/rational.h
-generator.o: $(hdrdir)/ruby/internal/intern/re.h
-generator.o: $(hdrdir)/ruby/internal/intern/ruby.h
-generator.o: $(hdrdir)/ruby/internal/intern/select.h
-generator.o: $(hdrdir)/ruby/internal/intern/select/largesize.h
-generator.o: $(hdrdir)/ruby/internal/intern/signal.h
-generator.o: $(hdrdir)/ruby/internal/intern/sprintf.h
-generator.o: $(hdrdir)/ruby/internal/intern/string.h
-generator.o: $(hdrdir)/ruby/internal/intern/struct.h
-generator.o: $(hdrdir)/ruby/internal/intern/thread.h
-generator.o: $(hdrdir)/ruby/internal/intern/time.h
-generator.o: $(hdrdir)/ruby/internal/intern/variable.h
-generator.o: $(hdrdir)/ruby/internal/intern/vm.h
-generator.o: $(hdrdir)/ruby/internal/interpreter.h
-generator.o: $(hdrdir)/ruby/internal/iterator.h
-generator.o: $(hdrdir)/ruby/internal/memory.h
-generator.o: $(hdrdir)/ruby/internal/method.h
-generator.o: $(hdrdir)/ruby/internal/module.h
-generator.o: $(hdrdir)/ruby/internal/newobj.h
-generator.o: $(hdrdir)/ruby/internal/scan_args.h
-generator.o: $(hdrdir)/ruby/internal/special_consts.h
-generator.o: $(hdrdir)/ruby/internal/static_assert.h
-generator.o: $(hdrdir)/ruby/internal/stdalign.h
-generator.o: $(hdrdir)/ruby/internal/stdbool.h
-generator.o: $(hdrdir)/ruby/internal/stdckdint.h
-generator.o: $(hdrdir)/ruby/internal/symbol.h
-generator.o: $(hdrdir)/ruby/internal/value.h
-generator.o: $(hdrdir)/ruby/internal/value_type.h
-generator.o: $(hdrdir)/ruby/internal/variable.h
-generator.o: $(hdrdir)/ruby/internal/warning_push.h
-generator.o: $(hdrdir)/ruby/internal/xmalloc.h
-generator.o: $(hdrdir)/ruby/missing.h
-generator.o: $(hdrdir)/ruby/onigmo.h
-generator.o: $(hdrdir)/ruby/oniguruma.h
-generator.o: $(hdrdir)/ruby/re.h
-generator.o: $(hdrdir)/ruby/regex.h
-generator.o: $(hdrdir)/ruby/ruby.h
-generator.o: $(hdrdir)/ruby/st.h
-generator.o: $(hdrdir)/ruby/subst.h
-generator.o: $(srcdir)/../fbuffer/fbuffer.h
-generator.o: generator.c
-generator.o: generator.h
-# AUTOGENERATED DEPENDENCIES END
+generator.o: generator.c $(srcdir)/../fbuffer/fbuffer.h

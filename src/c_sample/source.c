@@ -2,6 +2,9 @@
 
 #define VALUE int
 
+const int hoge, **huga;
+int *hoge[];
+
 int add(int a, int b){
 	int tmp = a + b;
 	return tmp;
@@ -12,6 +15,10 @@ void swap(float* c, float* d){
 	tmp = *c;
 	*c = *d;
 	*d = tmp;
+
+	for(i = 1; i < 5; i++){
+		i = i;
+	}
 }
 
 int main(){
