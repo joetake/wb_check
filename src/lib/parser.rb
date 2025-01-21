@@ -1,11 +1,10 @@
 require 'tree_sitter'
 require_relative 'classes'
 
-$struct_definitions = StructDefinitions.new
-$functions_ret_type = FunctionsRetType.new
+# $struct_definitions = StructDefinitions.new
+# $functions_ret_type = FunctionsRetType.new
 
 # list of global variables
-$grobalv = Array.new
 
 class Parser
   LHS_NIL_RESULT = {type_name: nil, is_typeddata: false, needWB: false}
@@ -17,6 +16,10 @@ class Parser
     @path_to_parser = path_to_parser
     @number_of_found_declarator = 0
     @wb_list = WriteBarrierList.new
+
+    @struct_definitions = StructDefinitions.new
+    @functions_ret_type = FunctionsRetType.new
+    @grobalv = Array.new
   end
 
   # find rb_check_typeddata()'s node recursively , return found node
@@ -42,6 +45,9 @@ class Parser
       name.gsub!(/[\(\)\*]/, '')
       puts "name: #{name}"
       cvar = find_cvar(vars_in_scope, name)
+
+      # 一時的！！！
+      return LHS_NIL_RESULT if cvar.nil?
       type_name = cvar.type
       if type_name.split(' ').size > 1
         type_name = type_name.split(' ').last
@@ -65,13 +71,12 @@ class Parser
       # check field
       field_info = nil
       if field.type == :field_identifier
-        puts "a"
         field_name = code[field.start_byte...field.end_byte]
         puts "#{argument_info[:type_name]}, #{field_name}"
-        field_cvar = $struct_definitions.find_field(argument_info[:type_name], field_name)
+        field_cvar = @struct_definitions.find_field(argument_info[:type_name], field_name)
+        @struct_definitions.inspect
         field_info = {type_name: field_cvar.type, is_typeddata: false, needWB: false}
       else
-        puts "b"
         field_info = process_lhs(field, code, vars_in_scope)
         # if field expression in field is needWB: true return immediately
         return field_info if field_info[:needWB]
@@ -85,8 +90,8 @@ class Parser
 
         # check struct in field has VALUE element or not
         puts "field_type: #{new_type_name}"
-        has_VALUE_element = $struct_definitions.has_VALUE_element?(new_type_name)
-        puts "hash_VALUE_element?: #{has_VALUE_element}"
+        has_VALUE_element = @struct_definitions.has_VALUE_element?(new_type_name)
+        puts "has_VALUE_element?: #{has_VALUE_element}"
 
         # if it isn't struct return as needWB: false
         unless has_VALUE_element
@@ -98,14 +103,15 @@ class Parser
         return {type_name: new_type_name, is_typeddata: true, needWB: true}
       end
 
-    when :subscript_expression
+    when :update_expression
       array_node = node.child_by_field_name('argument')
       result = process_lhs(array_node, code, vars_in_scope)
       return result
-    when :parenthesized_expression
+    when :parenthesized_expression, :assignment_expression
       inner = node.named_child(0)
       return process_lhs(inner, code, vars_in_scope)
-    when :call_expression, :cast_expression
+
+    when :call_expression, :cast_expression, :binary_expression, :subscript_expression
       return LHS_NIL_RESULT
     else
       puts "未対応のノードタイプ: #{node.type}"
@@ -113,17 +119,15 @@ class Parser
       exit
     end
   end
-  
+
   # check :declaration, return defined variables or fields
   def search_declaration(node, code)
     vars = []
     var_types = []
     var_names = []
+    puts node
     node.each_named do |child|
       case child.type
-      when :preproc_else, :preproc_ifdef, :preproc_if
-        ret = search_declaration(child, code)
-        vars.concat(ret) unless ret.nil?
       when :field_declaration
         type_node = child.child_by_field_name('type')
         declarator_node = child.child_by_field_name('declarator')
@@ -140,15 +144,16 @@ class Parser
         var_types << code[child.start_byte...child.end_byte]
 
       # locate variable name, no initialization
-      when :identifier, :field_identifier
+      when :identifier, :pointer_declarator, :field_identifier
         var_names << code[child.start_byte...child.end_byte]
       when :array_declarator
         var_names << code[child.start_byte...child.end_byte].gsub(/\[\w+\]/, "*")
 
       # locate variable name, has initialization
-      when :init_declarator, :pointer_declarator
+      when :init_declarator
         declarator = child.child_by_field_name('declarator')
         var_names << code[declarator.start_byte...declarator.end_byte]
+      when :poiinter_declarator
 
       # others
       when :union_specifier, :struct_specifier
@@ -163,7 +168,7 @@ class Parser
       #   exit
       end
     end
-
+    pointer_count = 0
     if var_types.size == 1 && var_names.size > 0 && vars.empty?
       var_type = var_types[0]
       var_names.each do |var_name|
@@ -175,8 +180,10 @@ class Parser
         end
         var_name.gsub!('*', '')
         var = CVar.new(var_type, var_name, pointer_count)
+        var.show
         vars << var
       end
+      puts "!pointer_count: #{pointer_count}"
     elsif var_types.size == var_names.size && var_names.size > 0 && vars.empty?
       var_names.each do |var_name, i|
         var_name.gsub!(' ', '')
@@ -189,6 +196,8 @@ class Parser
         var = CVar.new(var_types[i], var_name, pointer_count)
         vars << var
       end
+    # else
+    #   exit
     end
     return vars
   end
@@ -209,7 +218,6 @@ class Parser
         puts "        line: #{line_number}"
 
         if right_value.include?('rb_check_typeddata')
-
           # find T_DATA struct
           left_value.gsub!(/[\(\)\*]/, '')
           cvar = find_cvar(vars_in_scope, left_value)
@@ -218,6 +226,7 @@ class Parser
             puts "search_expression(): cvar not found"
             exit
           end
+
           cvar.is_typeddata = true
 
           # find parent obj
@@ -248,9 +257,18 @@ class Parser
   # 2nd depth
   # check child node of :compound_statement, if, while, etc
   def search_inside_block(node, code, _vars_in_bscope)
-
     #  to not interfere the original array
     vars_in_bscope = _vars_in_bscope.dup
+
+    # for statement might declarate index variable
+    if node.type == :for_statement
+      declarator = node.child_by_field_name('initializer')
+      if declarator.type == :declaration
+        vars = search_declaration(declarator, code)
+        vars_in_bscope.concat(vars)
+      end
+    end
+
     node.each do |child|
       line_number = child.start_point.row + 1
       puts "line: #{line_number}, inside block: #{child.type}"
@@ -261,18 +279,16 @@ class Parser
       when :declaration
       vars = search_declaration(child, code)
 
-=begin
       # if already there is the same element to vars, delete it for update
       vars.each do |va|
         vars_in_bscope.delete_if{|v| v.name = va.name}
       end
-=end
       vars_in_bscope.concat(vars)
 
       # find the part of Expression
       when :expression_statement
       _vars_in_bscope = vars_in_bscope.dup
-      vars_in_scope = Array(_vars_in_bscope).concat(Array($globalv))
+      vars_in_scope = Array(_vars_in_bscope).concat(Array(@globalv))
       search_expression(child, code, vars_in_scope)
       when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
         search_inside_block(child, code, vars_in_bscope)
@@ -291,6 +307,9 @@ class Parser
 
       # the part of arguments
       case child.type
+      when :pointer_declarator
+        params = search_function_declarator(child, code)
+        args.concat(params)
       when :parameter_list
         if child.named_child_count == 1
           declaration_node = child.named_child(0)
@@ -339,6 +358,7 @@ class Parser
     node.each_named do |child|
       puts "  Function's child: #{child.type}"
       case child.type
+      when :storage_class_specifier, :type_qualifier
 
       # return type
       when :primitive_type, :type_identifier
@@ -365,25 +385,24 @@ class Parser
         if f_declarator
         f_name = code[f_declarator.start_byte...f_declarator.end_byte]
         f_name.strip!
-        if $functions_ret_type.include?(f_name)
+        if @functions_ret_type.include?(f_name)
           next
         end
-        $functions_ret_type.register(f_name, type_str, pointer_count)
-        puts $functions_ret_type
+        @functions_ret_type.register(f_name, type_str, pointer_count)
         end
 
       # deep into Function Declarator
-      when :function_declarator
+      when :function_declarator, :pointer_declarator
         puts "  function_declarator's child: #{child}"
-        args = search_function_declarator(child, code)
-        vars_in_bscope.concat(Array(args))
+        params = search_function_declarator(child, code)
+        vars_in_bscope.concat(Array(params))
+        puts "params: #{params}"
 
       # deep into Function Body
       when :compound_statement
         search_inside_block(child, code, vars_in_bscope)
       end
     end
-
   end
 
   # 1st depth
@@ -412,10 +431,7 @@ class Parser
 
       # register definition of struct
       struct_definition = StructDefinition.new(type_name, field_list)
-      $struct_definitions.register(struct_definition)
-
-    else
-      return
+      @struct_definitions.register(struct_definition)
     end
   end
 
@@ -426,9 +442,10 @@ class Parser
     function_decl = node.child_by_field_name('declarator')
 
     # if it's global variable declaration, it should not have declarator of declarator
-    if function_decl.child_by_field_name('declarator').nil?
+    if function_decl.type != :function_declarator
       gvs = search_declaration(node, code)
-      $globalv = Array($globalv).concat(Array(gvs))
+      @globalv = Array(@globalv).concat(Array(gvs))
+      return
     end
 
     if function_decl.type == :identifier
@@ -453,7 +470,7 @@ class Parser
     return if func_id_node.nil?
     func_name = code[func_id_node.start_byte...func_id_node.end_byte]
 
-    $functions_ret_type.register(func_name.strip, type_str.strip, pointer_count)
+    @functions_ret_type.register(func_name.strip, type_str.strip, pointer_count)
   end
 
   # initiate program

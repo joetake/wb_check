@@ -30,8 +30,7 @@ def find_cvar(vars_in_scope, name)
   end
 
   puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
-  puts "vars_in_scope: #{vars_in_scope}"
-  exit
+  # exit
 end
 
 class StructDefinitions
