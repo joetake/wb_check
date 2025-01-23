@@ -16,9 +16,6 @@ void swap(float* c, float* d){
 	*c = *d;
 	*d = tmp;
 
-	for(i = 1; i < 5; i++){
-		i = i;
-	}
 }
 
 int main(){
