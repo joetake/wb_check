@@ -53,6 +53,15 @@ class StructDefinitions
     nil
   end
 
+  def find_def(struct_name)
+    puts "struct_name: #{struct_name}"
+    @list.each do |definition|
+      return definition if definition.name == struct_name
+    end
+    puts "field no found"
+    nil
+  end
+
   def has_VALUE_element?(struct_name)
     @list.each do |struct_definition|
       if struct_definition.name == struct_name
@@ -148,13 +157,14 @@ class FunctionRetType
 end
 
 class WriteBarrier
-  attr_accessor :left_node, :left_value, :right_value, :line_number, :vars_in_scope
-  def initialize(left_node, left_value, right_value, line_number, vars_in_scope)
+  attr_accessor :left_node, :left_value, :right_value, :line_number, :vars_in_scope, :type_name
+  def initialize(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
     @left_node = left_node
     @left_value = left_value 
     @right_value = right_value
     @line_number = line_number
     @vars_in_scope = vars_in_scope
+    @type_name = type_name
   end
 
   def inspect
@@ -168,8 +178,8 @@ class WriteBarrierList
     @list = Array.new
   end
 
-  def add(left_node, left_value, right_value, line_number, vars_in_scope)
-    @list << WriteBarrier.new(left_node, left_value, right_value, line_number, vars_in_scope)
+  def add(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
+    @list << WriteBarrier.new(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
   end
 
   def inspect()
@@ -180,7 +190,8 @@ class WriteBarrierList
     puts "number: #{@list.size}"
   end
   
-  def debug_sample()
+  def debug_sample(struct_definitions)
+    ctr = 0
     @list.each do |w|
       left_value = w.left_value
       left_value.gsub!(/[\(\)\*]/, '')
@@ -191,15 +202,32 @@ class WriteBarrierList
         exit
       end
 
-      # それぞれの引数
-      old = "(VALUE)#{cvar.parent_obj}"
-      oldv = '(VALUE)(((VALUE)RUBY_Qundef))'
-      young = left_value
-      filename = '"auto_insertion"'
-      line = -1
+      changed_fields = Array.new
+      if w.type_name == 'VALUE'
+        changed_fields << left_value
+      else
+        struct_def = struct_definitions.find_def(w.type_name)
+        struct_def.fields.each do |fld|
+          next unless normalize_type_name(fld.type) == "VALUE"
+          subfield_name = fld.name  # "a", "b", etc.
+          # 3. "ptr->structfield.a" の文字列を作成
+          changed_fields <<  "#{w.left_value}.#{subfield_name}"
+        end
+      end
 
-      puts "line #{w.line_number }: rb_obj_written(#{old}, #{oldv}, #{young}, #{filename}, #{line})"
+      changed_fields.each do |changed_field|
+        ctr = ctr + 1
+        # それぞれの引数
+        old = "(VALUE)#{cvar.parent_obj}"
+        oldv = '(VALUE)(((VALUE)RUBY_Qundef))'
+        young = changed_field
+        filename = '"auto_insertion"'
+        line = -1
+
+        puts "line #{w.line_number }: rb_obj_written(#{old}, #{oldv}, #{young}, #{filename}, #{line})"
+      end
     end
+    puts "num of inserted writebarrier :#{ctr}"
   end
 end
 

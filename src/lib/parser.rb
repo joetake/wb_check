@@ -7,8 +7,8 @@ require_relative 'classes'
 # list of global variables
 
 class Parser
-  LHS_NIL_RESULT = {type_name: nil, is_typeddata: false, needWB: false}
-  LHS_WB_RESULT = {type_name: nil, is_typeddata: true, needWB: true}
+  LHS_NIL_RESULT = {type_name: nil, is_pointer_access: false, is_typeddata: false, needWB: false}
+  LHS_WB_RESULT = {type_name: nil, is_pointer_access: true, is_typeddata: true, needWB: true}
 
 
   def initialize(path_to_source, path_to_parser)
@@ -52,13 +52,11 @@ class Parser
       if type_name.split(' ').size > 1
         type_name = type_name.split(' ').last
       end
-      return {type_name: type_name, is_typeddata: cvar.is_typeddata, needWB: false}
-    when :pointer_expression
-      child = node.child_by_field_name('argument')
-      result = process_lhs(child, code, vars_in_scope)
-
-      return result
+      return {type_name: type_name, is_pointer_access: false, is_typeddata: cvar.is_typeddata, needWB: false}
     when :field_expression
+      operator_node = node.child_by_field_name('operator')
+      operator = code[operator_node.start_byte...operator_node.end_byte]
+      puts operator
       argument = node.child_by_field_name('argument')
       field = node.child_by_field_name('field')
       puts "argument: #{argument}"
@@ -74,18 +72,18 @@ class Parser
         field_name = code[field.start_byte...field.end_byte]
         puts "#{argument_info[:type_name]}, #{field_name}"
         field_cvar = @struct_definitions.find_field(argument_info[:type_name], field_name)
-        @struct_definitions.inspect
-        field_info = {type_name: field_cvar.type, is_typeddata: false, needWB: false}
+        field_info = {type_name: field_cvar.type, is_pointer_access: false, is_typeddata: false, needWB: false}
       else
         field_info = process_lhs(field, code, vars_in_scope)
         # if field expression in field is needWB: true return immediately
         return field_info if field_info[:needWB]
       end
 
+      expected_access = (operator == '->') || (operator == '.' && argument_info[:is_pointer_access])
       new_type_name = normalize_type_name(field_info[:type_name])
       # check WBneed or not
-      if new_type_name == 'VALUE'
-        return {type_name: 'VALUE', is_typeddata: false, needWB: argument_info[:is_typeddata]}
+      if new_type_name == 'VALUE' && expected_access
+        return {type_name: 'VALUE', is_pointer_access: true, is_typeddata: false, needWB: true}
       else
 
         # check struct in field has VALUE element or not
@@ -93,30 +91,30 @@ class Parser
         has_VALUE_element = @struct_definitions.has_VALUE_element?(new_type_name)
         puts "has_VALUE_element?: #{has_VALUE_element}"
 
-        # if it isn't struct return as needWB: false
+        # if it isn't struct or not expected access, return as needWB: false
         unless has_VALUE_element
-          puts "hasn't VALUE element"
-          return {type_name: new_type_name, is_typeddata: argument_info[:is_typeddata], needWB: false}
+          return {type_name: new_type_name, is_pointer_access: field_info[:is_pointer_access], is_typeddata: argument_info[:is_typeddata], needWB: false}
         end
 
-        puts "ok"
-        return {type_name: new_type_name, is_typeddata: true, needWB: true}
+        return {type_name: new_type_name, is_pointer_access: true, is_typeddata: true, needWB: true}
       end
 
-    when :update_expression
-      array_node = node.child_by_field_name('argument')
-      result = process_lhs(array_node, code, vars_in_scope)
+    when :pointer_expression
+      child = node.child_by_field_name('argument')
+      result = process_lhs(child, code, vars_in_scope)
+      result[:is_pointer_access] = true
       return result
-    when :parenthesized_expression, :assignment_expression
+    when :parenthesized_expression
       inner = node.named_child(0)
       return process_lhs(inner, code, vars_in_scope)
 
-    when :call_expression, :cast_expression, :binary_expression, :subscript_expression
-      return LHS_NIL_RESULT
+    when :assignment_expression
+      inner = node.named_child(1)
+      return process_lhs(inner, code, vars_in_scope)
+    # when :call_expression, :cast_expression, :binary_expression, :subscript_expression
+    #   return LHS_NIL_RESULT
     else
-      puts "未対応のノードタイプ: #{node.type}"
-      puts node
-      exit
+      return LHS_NIL_RESULT
     end
   end
 
@@ -224,8 +222,12 @@ class Parser
 
           if cvar.nil?
             puts "search_expression(): cvar not found"
+            vars_in_scope.each do |cvar|
+              cvar.show
+            end
             exit
           end
+
 
           cvar.is_typeddata = true
 
@@ -242,10 +244,9 @@ class Parser
         result = process_lhs(left, code, vars_in_scope)
         puts "result: #{result}"
 
-        if result[:needWB] && !right_value.include?('rb_check_typeddata')
+        if result[:needWB]
           puts "        WRITEBARRIER on fire"
-
-          @wb_list.add(left, left_value, right_value, line_number, vars_in_scope)
+          @wb_list.add(left, left_value, right_value, line_number, vars_in_scope, result[:type_name])
         end
       else
         search_expression(child, code, vars_in_scope)
@@ -280,15 +281,14 @@ class Parser
       vars = search_declaration(child, code)
 
       # if already there is the same element to vars, delete it for update
-      vars.each do |va|
-        vars_in_bscope.delete_if{|v| v.name = va.name}
-      end
+      # vars.each do |va|
+      #   vars_in_bscope.delete_if{|v| v.name = va.name}
+      # end
       vars_in_bscope.concat(vars)
 
       # find the part of Expression
       when :expression_statement
-      _vars_in_bscope = vars_in_bscope.dup
-      vars_in_scope = Array(_vars_in_bscope).concat(Array(@globalv))
+      vars_in_scope = Array(vars_in_bscope).concat(Array(@globalv))
       search_expression(child, code, vars_in_scope)
       when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
         search_inside_block(child, code, vars_in_bscope)
@@ -510,7 +510,7 @@ class Parser
 
     # show result
     @wb_list.inspect
-    @wb_list.debug_sample
+    @wb_list.debug_sample(@struct_definitions)
     puts "success"
   end
 end
