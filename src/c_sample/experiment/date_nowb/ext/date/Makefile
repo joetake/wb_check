@@ -13,12 +13,12 @@ NULLCMD = :
 #### Start of system configuration section. ####
 
 srcdir = .
-topdir = /home/joe/.rbenv/versions/3.3.7/include/ruby-3.3.0
+topdir = /home/joe/.rbenv/versions/3.3.0/include/ruby-3.3.0
 hdrdir = $(topdir)
-arch_hdrdir = /home/joe/.rbenv/versions/3.3.7/include/ruby-3.3.0/x86_64-linux
+arch_hdrdir = /home/joe/.rbenv/versions/3.3.0/include/ruby-3.3.0/x86_64-linux
 PATH_SEPARATOR = :
 VPATH = $(srcdir):$(arch_hdrdir)/ruby:$(hdrdir)/ruby
-prefix = $(DESTDIR)/home/joe/.rbenv/versions/3.3.7
+prefix = $(DESTDIR)/home/joe/.rbenv/versions/3.3.0
 rubysitearchprefix = $(rubylibprefix)/$(sitearch)
 rubyarchprefix = $(rubylibprefix)/$(arch)
 rubylibprefix = $(libdir)/$(RUBY_BASE_NAME)

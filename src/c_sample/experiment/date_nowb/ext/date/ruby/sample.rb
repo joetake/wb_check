@@ -1,7 +1,7 @@
 require_relative '../date_core.so'
 GC::Profiler.enable
 
-count = 1_000_000
+count = 30_000_000
 date = Date.new(2025, 2, 4)
 copy = nil
 
