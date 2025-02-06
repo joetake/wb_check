@@ -6,7 +6,7 @@ require_relative 'classes'
 
 # list of global variables
 
-class Parser
+class Analyzer
   LHS_NIL_RESULT = {type_name: nil, is_pointer_access: false, is_typeddata: false, needWB: false}
   LHS_WB_RESULT = {type_name: nil, is_pointer_access: true, is_typeddata: true, needWB: true}
 
@@ -441,17 +441,16 @@ class Parser
     puts node
     function_decl = node.child_by_field_name('declarator')
 
-    # if it's global variable declaration, it should not have declarator of declarator
+    # detect grobal variable declaration
     if function_decl.type != :function_declarator
       gvs = search_declaration(node, code)
       @globalv = Array(@globalv).concat(Array(gvs))
       return
     end
 
-    if function_decl.type == :identifier
-      puts "#{code[function_decl.start_byte...function_decl.end_byte]}, #{code[node.start_byte...node.end_byte]}"
+    if function_decl.nil? || (function_decl.type != :function_declarator && function_decl.type != :pointer_declarator)
+      puts "unexpected node detected"
     end
-    return if function_decl.nil? || (function_decl.type != :function_declarator && function_decl.type != :pointer_declarator)
 
     if function_decl.type == :pointer_declarator
       function_decl = function_decl.child_by_field_name('declarator')
@@ -459,6 +458,7 @@ class Parser
     type_node = node.child_by_field_name('type')
     if type_node.nil?
       type_node = node.child_by_field_name('declartor')
+      exit
     end
 
     type_str = code[type_node.start_byte...type_node.end_byte]
