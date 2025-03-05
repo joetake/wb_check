@@ -16,10 +16,18 @@ class Analyzer
     @path_to_parser = path_to_parser
     @number_of_found_declarator = 0
     @wb_list = WriteBarrierList.new
+    @memcpy_wb_list = []  # memcpy検出用のリストを初期化
 
+    # 型情報の管理
     @struct_definitions = StructDefinitions.new
     @functions_ret_type = FunctionsRetType.new
+    @rb_data_type_definitions = RbDataTypeDefinitions.new
+    @function_signatures = FunctionSignatures.new
     @grobalv = {}
+    
+    # 解析状態の管理
+    @current_pass = 1  # 現在のパス番号
+    @total_passes = 4  # 合計パス数
   end
   
   # find rb_check_typeddata()'s node recursively , return found node
@@ -214,9 +222,10 @@ class Analyzer
         puts "        line: #{line_number}"
 
         if right_value.include?('rb_check_typeddata')
-          # find T_DATA struct
-          left_value.gsub!(/[\(\)\*]/, '')
-          cvar = find_cvar(vars_in_scope, left_value)
+          # 改善: rb_check_typeddataの呼び出しパターンを直接認識
+          # 左辺から変数名を抽出
+          var_name = left_value.gsub(/[\(\)\*\s]/, '').strip
+          cvar = find_cvar(vars_in_scope, var_name)
 
           if cvar.nil?
             puts "search_expression(): cvar not found"
@@ -234,14 +243,31 @@ class Analyzer
 
           cvar.is_typeddata = true
 
-          # find parent obj
+          # rb_check_typeddataの第1引数（親オブジェクト）を抽出
           call = find_typedthing_call(right, code)
-          arguments = call.child_by_field_name('arguments')
-          first_arg = arguments.named_child(0)
-          parent_obj = code[first_arg.start_byte...first_arg.end_byte]
-          puts parent_obj
-
-          cvar.parent_obj = parent_obj
+          if call
+            arguments = call.child_by_field_name('arguments')
+            if arguments && arguments.named_child_count >= 1
+              first_arg = arguments.named_child(0)
+              parent_obj = code[first_arg.start_byte...first_arg.end_byte]
+              puts "Parent object: #{parent_obj}"
+              cvar.parent_obj = parent_obj
+            end
+          end
+          
+          # rb_check_typeddataの第2引数（rb_data_type_t）を抽出
+          data_type_match = right_value.match(/rb_check_typeddata\([^,]+,\s*\(?&([^)]+)\)?/)
+          if data_type_match
+            data_type_name = data_type_match[1].strip
+            puts "Data type: #{data_type_name}"
+            
+            # 左辺の型を抽出（例：union DateData *）
+            type_match = left_value.match(/([^=]+)\*/)
+            if type_match
+              struct_type = normalize_type_name(type_match[1].strip)
+              update_typeddata_association(data_type_name, struct_type)
+            end
+          end
         end
 
         result = process_lhs(left, code, vars_in_scope)
@@ -522,44 +548,148 @@ class Analyzer
     @functions_ret_type.register(func_name.strip, type_str.strip, pointer_count)
   end
 
-  # initiate program
-  def run
-    # load generated parser
-    parser = TreeSitter::Parser.new
-    language = TreeSitter::Language.load('c', @path_to_parser)
-    parser.language = language
-
-    # read c source from current directory
-    src = File.read(@path_to_source)
-
-    # parse
-    tree = parser.parse_string(nil, src)
-    root = tree.root_node
-
-    # check children nodes of root
-    puts '==================================='
-    root.each_named do |child|
-      line_number = child.start_point.row + 1
-      puts "line #{line_number} child node type: #{child.type}"
-
-      case child.type
-      # find the part of defining Function
-      when :function_definition
-        search_function(child, src)
-      # global variables, function proto
-      when :declaration
-        search_func_proto(child, src)
-
-      # find the part of defining type (like Struct)
-      when :type_definition, :union_specifier, :struct_specifier
-        search_type_definition(child, src)
+  # rb_data_type_t型の定義を検索する
+  def search_rb_data_type_definition(node, code)
+    # 変数宣言を探す
+    if node.type == :declaration
+      # 型が rb_data_type_t かどうかを確認
+      type_node = node.child_by_field_name('type')
+      return unless type_node
+      
+      type_str = code[type_node.start_byte...type_node.end_byte]
+      return unless type_str.include?('rb_data_type_t')
+      
+      # 変数名を取得
+      declarator = node.child_by_field_name('declarator')
+      return unless declarator
+      
+      var_name = code[declarator.start_byte...declarator.end_byte].strip
+      
+      # 初期化式があるか確認
+      init_node = declarator.child_by_field_name('value')
+      if !init_node && declarator.type == :init_declarator
+        init_node = declarator.child_by_field_name('value')
+      end
+      
+      # rb_data_type_t型の定義を作成
+      data_type_def = RbDataTypeDefinition.new(var_name)
+      
+      # 初期化式から情報を抽出
+      if init_node
+        # 初期化式の内容を解析
+        parse_rb_data_type_initializer(init_node, code, data_type_def)
+      end
+      
+      # 登録
+      @rb_data_type_definitions.register(data_type_def)
+      puts "Found rb_data_type_t: #{var_name}"
+    end
+  end
+  
+  # rb_data_type_t型の初期化式を解析する
+  def parse_rb_data_type_initializer(init_node, code, data_type_def)
+    # 初期化式の内容を取得
+    init_str = code[init_node.start_byte...init_node.end_byte]
+    
+    # 名前フィールドを抽出
+    name_match = init_str.match(/"([^"]+)"/)
+    data_type_def.name = name_match[1] if name_match
+    
+    # dmark関数を抽出
+    dmark_match = init_str.match(/dmark\s*[,:]\s*([^,}]+)/)
+    data_type_def.dmark = dmark_match[1].strip if dmark_match
+    
+    # dfree関数を抽出
+    dfree_match = init_str.match(/dfree\s*[,:]\s*([^,}]+)/)
+    data_type_def.dfree = dfree_match[1].strip if dfree_match
+    
+    # dsize関数を抽出
+    dsize_match = init_str.match(/dsize\s*[,:]\s*([^,}]+)/)
+    data_type_def.dsize = dsize_match[1].strip if dsize_match
+    
+    # フラグを抽出
+    flags_match = init_str.match(/flags\s*[,:]\s*([^,}]+)/)
+    data_type_def.flags = flags_match[1].strip if flags_match
+    
+    # 親データ型を抽出
+    parent_match = init_str.match(/parent\s*[,:]\s*([^,}]+)/)
+    data_type_def.parent = parent_match[1].strip if parent_match
+  end
+  
+  # rb_check_typeddata関数の呼び出しを解析して、TypedDataと構造体型の関連付けを行う
+  def analyze_rb_check_typeddata_calls(node, code)
+    # 直接パターンを認識する方法を試す
+    recognize_typeddata_pattern(node, code)
+    
+    # memcpy関数の呼び出しを検出する
+    detect_memcpy_calls(node, code)
+    
+    # 従来の再帰的な探索も行う
+    node.each_named do |child|
+      if child.type == :call_expression
+        function_name = code[child.child_by_field_name('function').start_byte...child.child_by_field_name('function').end_byte]
+        
+        if function_name == 'rb_check_typeddata'
+          arguments = child.child_by_field_name('arguments')
+          if arguments && arguments.named_child_count >= 2
+            # 第2引数がrb_data_type_tへのポインタ
+            data_type_arg = arguments.named_child(1)
+            data_type_name = code[data_type_arg.start_byte...data_type_arg.end_byte].strip
+            data_type_name.gsub!(/[&\(\)\s]/, '')  # '&'と括弧と空白を削除
+            
+            # 第1引数（TypedDataオブジェクト）を取得
+            obj_arg = arguments.named_child(0)
+            obj_name = code[obj_arg.start_byte...obj_arg.end_byte].strip
+            
+            # 親ノードを調査して代入式を見つける
+            parent = find_parent_assignment(child, code)
+            if parent && parent.type == :assignment_expression
+              left = parent.child_by_field_name('left')
+              
+              # 左辺から構造体型を直接抽出
+              if left
+                left_str = code[left.start_byte...left.end_byte]
+                # 型キャストを含む場合（例：((union DateData *)rb_check_typeddata(...))）
+                struct_type_match = left_str.match(/\(\(([^*]+)\*\)/)
+                if struct_type_match
+                  struct_type = normalize_type_name(struct_type_match[1].strip)
+                  update_typeddata_association(data_type_name, struct_type)
+                  
+                  # TypedDataオブジェクトと構造体ポインタの関連付けを記録
+                  var_name = left_str.gsub(/[\(\)\*\s]/, '').strip
+                  register_typeddata_pointer_association(obj_name, var_name, struct_type)
+                else
+                  # 変数名から型を特定する従来の方法
+                  var_name = left_str.gsub(/[\(\)\*\s]/, '').strip
+                  var_decl = find_variable_declaration(var_name, code)
+                  if var_decl
+                    struct_type = normalize_type_name(var_decl.type)
+                    update_typeddata_association(data_type_name, struct_type)
+                    
+                    # TypedDataオブジェクトと構造体ポインタの関連付けを記録
+                    register_typeddata_pointer_association(obj_name, var_name, struct_type)
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+      
+      # 再帰的に探索
+      if child.named_child_count > 0
+        analyze_rb_check_typeddata_calls(child, code)
       end
     end
-    puts '==================================='
-
-    # show result
-    @wb_list.inspect
-    @wb_list.debug_sample(@struct_definitions)
-    puts "success"
   end
-end
+  
+  # TypedDataオブジェクトと構造体ポインタの関連付けを記録
+  def register_typeddata_pointer_association(obj_name, ptr_name, struct_type)
+    @typeddata_pointer_associations ||= {}
+    @typeddata_pointer_associations[ptr_name] = {
+      obj_name: obj_name,
+      struct_type: struct_type
+    }
+    puts "Registered TypedData association: #{obj_name} -> #{ptr_name} (#{struct_type})"
+    
+    # 関数内での

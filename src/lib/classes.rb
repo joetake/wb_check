@@ -4,8 +4,9 @@ def normalize_type_name(type_name)
            .sub(/^struct\s+/, '')
            .sub(/^enum\s+/, '')
 end
+
 class CVar
-  attr_accessor :type, :name, :pointer_count, :is_typeddata, :parent_obj
+  attr_accessor :type, :name, :pointer_count, :is_typeddata, :parent_obj, :struct_type, :value_fields
 
   def initialize(type, name, pointer_count)
     @type = type
@@ -13,6 +14,8 @@ class CVar
     @pointer_count = pointer_count
     @is_typeddata = false
     @parent_obj = nil
+    @struct_type = nil  # 関連する構造体型
+    @value_fields = []  # VALUEフィールドのリスト
   end
 
   def is_pointer?
@@ -87,15 +90,21 @@ class StructDefinitions
 end
 
 class StructDefinition
-  attr_accessor :name, :fields, :fields_map
+  attr_accessor :name, :fields, :fields_map, :value_fields, :is_typeddata, :data_type_name
+  
   def initialize(name, fields)
     @name = name
     @fields = fields  # Keep for backward compatibility
+    @is_typeddata = false  # この構造体がTypedDataとして使用されるかどうか
+    @data_type_name = nil  # 関連するrb_data_type_t型の名前
     
     # Create a hash map of field name -> field
     @fields_map = {}
+    @value_fields = []  # VALUEフィールドのリスト
+    
     fields.each do |field|
       @fields_map[field.name] = field
+      @value_fields << field if field.type == 'VALUE' || field.type.include?('VALUE')
     end
   end
 
@@ -104,14 +113,20 @@ class StructDefinition
   end
 
   def has_VALUE_element?
-    @fields.any? { |cvar| cvar.type == 'VALUE' }
+    !@value_fields.empty?
   end
 
   def inspect()
     puts "name: #{@name}"
+    puts "is_typeddata: #{@is_typeddata}"
+    puts "data_type_name: #{@data_type_name}" if @data_type_name
     puts "fields:"
     @fields.each_with_index do |f, i|
       puts "#{i}: name: #{f.name}, type: #{f.type}"
+    end
+    puts "VALUE fields:"
+    @value_fields.each do |f|
+      puts "  name: #{f.name}, type: #{f.type}"
     end
   end
 end
@@ -153,6 +168,127 @@ class FunctionRetType
     @name = name
     @type = type
     @pointer_count = pointer_count
+  end
+end
+
+# rb_data_type_t型の定義を表すクラス
+class RbDataTypeDefinition
+  attr_accessor :name, :dmark, :dfree, :dsize, :flags, :parent, :struct_type
+  
+  def initialize(name)
+    @name = name
+    @dmark = nil  # マーク関数
+    @dfree = nil  # 解放関数
+    @dsize = nil  # サイズ計算関数
+    @flags = nil  # フラグ
+    @parent = nil  # 親データ型
+    @struct_type = nil  # 関連する構造体型
+  end
+  
+  def has_dmark?
+    !@dmark.nil? && @dmark != "0" && @dmark != "NULL"
+  end
+  
+  def inspect
+    puts "RbDataTypeDefinition: #{@name}"
+    puts "  dmark: #{@dmark}"
+    puts "  dfree: #{@dfree}"
+    puts "  dsize: #{@dsize}"
+    puts "  flags: #{@flags}"
+    puts "  parent: #{@parent}"
+    puts "  struct_type: #{@struct_type}"
+  end
+end
+
+# rb_data_type_t型の定義を管理するクラス
+class RbDataTypeDefinitions
+  attr_accessor :list, :map
+  
+  def initialize
+    @list = []
+    @map = {}  # 名前 -> 定義のマップ
+  end
+  
+  def register(data_type_definition)
+    @list << data_type_definition
+    @map[data_type_definition.name] = data_type_definition
+  end
+  
+  def find_by_name(name)
+    @map[name]
+  end
+  
+  def inspect
+    puts "RbDataTypeDefinitions:"
+    if @map.empty?
+      puts "  No rb_data_type_t definitions registered"
+    else
+      @map.each_value do |dt|
+        dt.inspect
+      end
+    end
+  end
+end
+
+# 関数シグネチャを表すクラス
+class FunctionSignature
+  attr_accessor :name, :return_type, :parameters, :modifies_typeddata, :body_node
+  
+  def initialize(name, return_type)
+    @name = name
+    @return_type = return_type
+    @parameters = []  # パラメータのリスト（型情報を含む）
+    @modifies_typeddata = false  # TypedDataを変更するかどうか
+    @body_node = nil  # 関数本体のノード
+  end
+  
+  def add_parameter(param_name, param_type, pointer_count = 0)
+    @parameters << {name: param_name, type: param_type, pointer_count: pointer_count}
+  end
+  
+  def parameter_modified?(index)
+    # 実装は後で追加
+    false
+  end
+  
+  def inspect
+    puts "FunctionSignature: #{@name}"
+    puts "  return_type: #{@return_type}"
+    puts "  parameters:"
+    @parameters.each_with_index do |param, i|
+      puts "    #{i}: #{param[:name]} (#{param[:type]})"
+    end
+    puts "  modifies_typeddata: #{@modifies_typeddata}"
+  end
+end
+
+# 関数シグネチャを管理するクラス
+class FunctionSignatures
+  attr_accessor :list, :map
+  
+  def initialize
+    @list = []
+    @map = {}  # 名前 -> シグネチャのマップ
+  end
+  
+  def register(function_signature)
+    @list << function_signature
+    @map[function_signature.name] = function_signature
+  end
+  
+  def find_by_name(name)
+    @map[name]
+  end
+  
+  def inspect
+    puts "FunctionSignatures:"
+    if @map.empty?
+      puts "  No function signatures registered"
+    else
+      @map.each_value do |fs|
+        fs.inspect
+      end
+    end
   end
 end
 
@@ -198,14 +334,16 @@ class WriteBarrierList
   
   def debug_sample(struct_definitions)
     ctr = 0
+    
+    # 通常のライトバリアポイントを処理
     @list.each do |w|
-      left_value = w.left_value
-      left_value.gsub!(/[\(\)\*]/, '')
-      data = left_value.split('->')[0]
+      left_value = w.left_value.dup  # 元の値を変更しないようにコピーを作成
+      clean_left_value = left_value.gsub(/[\(\)\*]/, '')
+      data = clean_left_value.split('->')[0]
       cvar = find_cvar(w.vars_in_scope, data)
       if cvar.nil?
-        puts "while write barrrier insertion(): cvar not found"
-        exit
+        puts "while write barrrier insertion(): cvar not found for #{data}"
+        next  # エラーの場合はスキップして次のバリアに進む
       end
 
       changed_fields = []
@@ -217,24 +355,76 @@ class WriteBarrierList
           struct_def.fields.each do |fld|
             next unless normalize_type_name(fld.type) == "VALUE"
             subfield_name = fld.name  # "a", "b", etc.
-            # 3. "ptr->structfield.a" の文字列を作成
-            changed_fields << "#{w.left_value}.#{subfield_name}"
+            # フィールドアクセスの文字列を作成
+            if left_value.include?('->')
+              changed_fields << "#{left_value}.#{subfield_name}"
+            else
+              changed_fields << "#{left_value}->#{subfield_name}"
+            end
           end
         end
       end
 
+      # 親オブジェクトの情報を取得
+      parent_obj = cvar.parent_obj
+      
+      # TypedDataの場合、rb_data_type_tの情報を確認
+      is_typeddata = cvar.is_typeddata
+      data_type_name = nil
+      
+      if is_typeddata && struct_def = struct_definitions.find_def(normalize_type_name(cvar.type))
+        data_type_name = struct_def.data_type_name
+      end
+      
       changed_fields.each do |changed_field|
         ctr = ctr + 1
         # それぞれの引数
-        old = "(VALUE)#{cvar.parent_obj}"
+        old = parent_obj ? "(VALUE)#{parent_obj}" : "Qnil"
         oldv = '(VALUE)(((VALUE)RUBY_Qundef))'
         young = changed_field
         filename = '"auto_insertion"'
-        line = -1
-
-        puts "line #{w.line_number }: rb_obj_written(#{old}, #{oldv}, #{young}, #{filename}, #{line})"
+        line = w.line_number
+        
+        # TypedDataの場合、フラグ情報を出力
+        if is_typeddata && data_type_name
+          puts "line #{line}: /* TypedData: #{data_type_name} */"
+        end
+        
+        puts "line #{line}: rb_obj_written(#{old}, #{oldv}, #{young}, #{filename}, #{line})"
       end
     end
+    
+    # memcpyによるデータ変更パターンで検出したライトバリアポイントを処理
+    if defined?(@memcpy_wb_list) && @memcpy_wb_list && !@memcpy_wb_list.empty?
+      puts "DEBUG: Processing #{@memcpy_wb_list.size} memcpy write barriers"
+      
+      @memcpy_wb_list.each do |wb|
+        ctr = ctr + 1
+        
+        # ライトバリア情報を出力
+        obj_name = wb[:obj_name]
+        field_access = wb[:field_access]
+        line_number = wb[:line_number]
+        auto_inserted = wb[:auto_inserted]
+        
+        old = "(VALUE)#{obj_name}"
+        oldv = '(VALUE)(((VALUE)RUBY_Qundef))'
+        young = field_access
+        filename = '"auto_insertion"'
+        
+        # 自動挿入されたライトバリアの場合、コメントを追加
+        if auto_inserted
+          puts "line #{line_number}: /* memcpy detected - auto inserted */"
+        else
+          puts "line #{line_number}: /* memcpy detected */"
+        end
+        
+        puts "line #{line_number}: rb_obj_written(#{old}, #{oldv}, #{young}, #{filename}, #{line_number})"
+      end
+    else
+      puts "DEBUG: No memcpy write barriers detected"
+    end
+    
     puts "num of inserted writebarrier :#{ctr}"
   end
   
