@@ -16,7 +16,6 @@ class Analyzer
     @path_to_parser = path_to_parser
     @number_of_found_declarator = 0
     @wb_list = WriteBarrierList.new
-    @memcpy_wb_list = []  # memcpy検出用のリストを初期化
 
     # 型情報の管理
     @struct_definitions = StructDefinitions.new
@@ -621,9 +620,6 @@ class Analyzer
     # 直接パターンを認識する方法を試す
     recognize_typeddata_pattern(node, code)
     
-    # memcpy関数の呼び出しを検出する
-    detect_memcpy_calls(node, code)
-    
     # 従来の再帰的な探索も行う
     node.each_named do |child|
       if child.type == :call_expression
@@ -636,10 +632,6 @@ class Analyzer
             data_type_arg = arguments.named_child(1)
             data_type_name = code[data_type_arg.start_byte...data_type_arg.end_byte].strip
             data_type_name.gsub!(/[&\(\)\s]/, '')  # '&'と括弧と空白を削除
-            
-            # 第1引数（TypedDataオブジェクト）を取得
-            obj_arg = arguments.named_child(0)
-            obj_name = code[obj_arg.start_byte...obj_arg.end_byte].strip
             
             # 親ノードを調査して代入式を見つける
             parent = find_parent_assignment(child, code)
@@ -654,10 +646,6 @@ class Analyzer
                 if struct_type_match
                   struct_type = normalize_type_name(struct_type_match[1].strip)
                   update_typeddata_association(data_type_name, struct_type)
-                  
-                  # TypedDataオブジェクトと構造体ポインタの関連付けを記録
-                  var_name = left_str.gsub(/[\(\)\*\s]/, '').strip
-                  register_typeddata_pointer_association(obj_name, var_name, struct_type)
                 else
                   # 変数名から型を特定する従来の方法
                   var_name = left_str.gsub(/[\(\)\*\s]/, '').strip
@@ -665,9 +653,6 @@ class Analyzer
                   if var_decl
                     struct_type = normalize_type_name(var_decl.type)
                     update_typeddata_association(data_type_name, struct_type)
-                    
-                    # TypedDataオブジェクトと構造体ポインタの関連付けを記録
-                    register_typeddata_pointer_association(obj_name, var_name, struct_type)
                   end
                 end
               end
@@ -683,13 +668,334 @@ class Analyzer
     end
   end
   
-  # TypedDataオブジェクトと構造体ポインタの関連付けを記録
-  def register_typeddata_pointer_association(obj_name, ptr_name, struct_type)
-    @typeddata_pointer_associations ||= {}
-    @typeddata_pointer_associations[ptr_name] = {
-      obj_name: obj_name,
-      struct_type: struct_type
-    }
-    puts "Registered TypedData association: #{obj_name} -> #{ptr_name} (#{struct_type})"
+  # rb_check_typeddata呼び出しパターンを直接認識する
+  def recognize_typeddata_pattern(node, code)
+    if node.type == :assignment_expression
+      right = node.child_by_field_name('right')
+      left = node.child_by_field_name('left')
+      
+      if right && left
+        right_str = code[right.start_byte...right.end_byte]
+        left_str = code[left.start_byte...left.end_byte]
+        
+        # rb_check_typeddataを含む代入パターンを検出
+        if right_str.include?('rb_check_typeddata')
+          # 左辺から変数名を抽出
+          var_name = left_str.gsub(/[\(\)\*\s]/, '').strip
+          
+          # rb_check_typeddataの第2引数（rb_data_type_t）を抽出
+          data_type_match = right_str.match(/rb_check_typeddata\([^,]+,\s*\(?&([^)]+)\)?/)
+          if data_type_match
+            data_type_name = data_type_match[1].strip
+            
+            # 左辺の型を抽出（例：union DateData *）
+            # 直接の型指定がある場合
+            type_match = left_str.match(/([^=]+)\*/)
+            if type_match
+              struct_type = normalize_type_name(type_match[1].strip)
+              update_typeddata_association(data_type_name, struct_type)
+            else
+              # 変数名から型を特定
+              var_decl = find_variable_declaration(var_name, code)
+              if var_decl
+                struct_type = normalize_type_name(var_decl.type)
+                update_typeddata_association(data_type_name, struct_type)
+              end
+            end
+          end
+        end
+      end
+    end
     
-    # 関数内での
+    # 子ノードも再帰的に処理
+    node.each_named do |child|
+      recognize_typeddata_pattern(child, code)
+    end
+  end
+  
+  # TypedDataと構造体型の関連付けを更新
+  def update_typeddata_association(data_type_name, struct_type)
+    data_type_def = @rb_data_type_definitions.find_by_name(data_type_name)
+    if data_type_def
+      data_type_def.struct_type = struct_type
+      
+      struct_def = @struct_definitions.find_def(struct_type)
+      if struct_def
+        struct_def.is_typeddata = true
+        struct_def.data_type_name = data_type_name
+      end
+    end
+  end
+  
+  # 親の代入式を探す（改善版）
+  def find_parent_assignment(node, code)
+    # 直接の親が代入式かチェック
+    parent = node.parent
+    if parent && parent.type == :assignment_expression
+      return parent
+    end
+    
+    # キャスト式を通して親を探す
+    parent = node.parent
+    while parent
+      if parent.type == :cast_expression
+        parent = parent.parent
+        next
+      elsif parent.type == :assignment_expression
+        return parent
+      else
+        break
+      end
+    end
+    
+    # 代入式が見つからない場合、周囲のコンテキストを調査
+    # 例：union DateData *adat; ((adat) = ((union DateData *)rb_check_typeddata((self), (&d_lite_type))));;
+    # この場合、変数宣言と代入が別々になっている
+    
+    return nil
+  end
+  
+  # 変数の宣言を探す
+  def find_variable_declaration(var_name, code)
+    # この実装は簡略化されています。実際には変数のスコープを考慮する必要があります。
+    @grobalv[var_name]
+  end
+  
+  # 関数シグネチャを収集する
+  def collect_function_signatures(node, code)
+    if node.type == :function_definition
+      # 関数名を取得
+      f_name = extract_function_name(node, code)
+      return unless f_name
+      
+      # 戻り値の型を取得
+      return_type = nil
+      node.each_named do |child|
+        if child.type == :primitive_type || child.type == :type_identifier
+          return_type = code[child.start_byte...child.end_byte]
+          break
+        end
+      end
+      return unless return_type
+      
+      # 関数シグネチャを作成
+      function_signature = FunctionSignature.new(f_name, return_type)
+      
+      # パラメータを取得
+      f_declarator = node.child_by_field_name('declarator')
+      if f_declarator && f_declarator.type == :function_declarator
+        parameter_list = f_declarator.child_by_field_name('parameter_list')
+        if parameter_list
+          parameter_list.named_children.each do |param|
+            if param.type == :parameter_declaration
+              type_node = param.child_by_field_name('type')
+              declarator = param.child_by_field_name('declarator')
+              
+              if type_node && declarator
+                param_type = code[type_node.start_byte...type_node.end_byte]
+                param_name = code[declarator.start_byte...declarator.end_byte]
+                
+                # ポインタ数をカウント
+                pointer_count = param_name.count('*')
+                param_name.gsub!(/[\*\s]/, '')
+                
+                function_signature.add_parameter(param_name, param_type, pointer_count)
+              end
+            end
+          end
+        end
+      end
+      
+      # 関数本体のノードを保存
+      body_node = node.child_by_field_name('body')
+      function_signature.body_node = body_node if body_node
+      
+      # 登録
+      @function_signatures.register(function_signature)
+      puts "Found function signature: #{f_name}"
+    end
+  end
+  
+  # 関数名を抽出する
+  def extract_function_name(function_node, code)
+    declarator = function_node.child_by_field_name('declarator')
+    return nil if declarator.nil?
+    
+    # ネストした宣言子を辿る
+    current = declarator
+    while current && (current.type == :function_declarator || current.type == :pointer_declarator)
+      if current.type == :function_declarator
+        current = current.child_by_field_name('declarator')
+      elsif current.type == :pointer_declarator
+        current = current.child_by_field_name('declarator')
+      end
+      break if current.nil?
+    end
+    
+    return nil if current.nil?
+    
+    # 関数名を取得
+    code[current.start_byte...current.end_byte].strip
+  end
+  
+  # 第1パス: 型定義の収集
+  def first_pass(root, code)
+    puts "=== First Pass: Collecting Type Definitions ==="
+    
+    root.each_named do |child|
+      line_number = child.start_point.row + 1
+      
+      case child.type
+      when :declaration
+        # rb_data_type_t型の定義を検索
+        search_rb_data_type_definition(child, code)
+        
+        # グローバル変数と関数プロトタイプ
+        search_func_proto(child, code)
+        
+      when :type_definition, :struct_specifier, :union_specifier
+        # 構造体定義
+        search_type_definition(child, code)
+        
+      when :function_definition
+        # 関数シグネチャを収集
+        collect_function_signatures(child, code)
+      end
+    end
+    
+    # 結果を表示
+    puts "Found #{@rb_data_type_definitions.list.size} rb_data_type_t definitions"
+    puts "Found #{@struct_definitions.list.size} struct definitions"
+    puts "Found #{@function_signatures.list.size} function signatures"
+  end
+  
+  # 第2パス: 型の関連付け
+  def second_pass(root, code)
+    puts "=== Second Pass: Associating Types ==="
+    
+    # rb_check_typeddata関数の呼び出しを解析
+    analyze_rb_check_typeddata_calls(root, code)
+    
+    # 結果を表示
+    typeddata_structs = @struct_definitions.list.select { |s| s.is_typeddata }
+    puts "Found #{typeddata_structs.size} TypedData structs"
+  end
+  
+  # 第3パス: 関数解析
+  def third_pass(root, code)
+    puts "=== Third Pass: Analyzing Functions ==="
+    
+    # 関数本体を解析
+    # この実装は後で追加
+    
+    puts "Function analysis not yet implemented"
+  end
+  
+  # 第4パス: ライトバリアポイントの特定
+  def fourth_pass(root, code)
+    puts "=== Fourth Pass: Identifying Write Barrier Points ==="
+    
+    # 現在の実装と同様に代入式を解析
+    root.each_named do |child|
+      line_number = child.start_point.row + 1
+      
+      case child.type
+      when :function_definition
+        search_function(child, code)
+      end
+    end
+    
+    # TypedDataオブジェクトに対するライトバリアの最適化
+    optimize_typeddata_write_barriers
+    
+    # 結果を表示
+    @wb_list.inspect
+    @wb_list.debug_sample(@struct_definitions)
+  end
+  
+  # TypedDataオブジェクトに対するライトバリアを最適化する
+  def optimize_typeddata_write_barriers
+    puts "Optimizing write barriers for TypedData objects..."
+    
+    # rb_data_type_tのフラグを確認
+    @rb_data_type_definitions.list.each do |data_type_def|
+      # RUBY_TYPED_WB_PROTECTEDフラグが設定されているか確認
+      if data_type_def.flags && data_type_def.flags.include?('RUBY_TYPED_WB_PROTECTED')
+        puts "TypedData with WB_PROTECTED flag: #{data_type_def.name}"
+        
+        # 関連する構造体を取得
+        struct_type = data_type_def.struct_type
+        next unless struct_type
+        
+        struct_def = @struct_definitions.find_def(struct_type)
+        next unless struct_def
+        
+        # この構造体に関連するライトバリアポイントを最適化
+        optimize_struct_write_barriers(struct_def, data_type_def)
+      end
+    end
+  end
+  
+  # 特定の構造体に対するライトバリアを最適化する
+  def optimize_struct_write_barriers(struct_def, data_type_def)
+    puts "Optimizing write barriers for struct: #{struct_def.name}"
+    
+    # VALUEフィールドを持つ構造体のみ処理
+    return unless struct_def.has_VALUE_element?
+    
+    # ライトバリアリストを走査して最適化
+    @wb_list.list.each do |barrier|
+      # この構造体に関連するバリアかどうかを確認
+      if barrier.type_name == struct_def.name || 
+         (barrier.type_name == 'VALUE' && barrier.left_value.include?(struct_def.name))
+        
+        # 親オブジェクトの情報を更新
+        left_value = barrier.left_value
+        if left_value.include?('->')
+          # フィールドアクセスの場合、親オブジェクトを特定
+          parent_obj = left_value.split('->').first
+          parent_obj.gsub!(/[\(\)\*\s]/, '')
+          
+          # 変数情報を取得
+          cvar = find_cvar(barrier.vars_in_scope, parent_obj)
+          if cvar && cvar.is_typeddata && cvar.parent_obj
+            puts "Updated parent object for barrier at line #{barrier.line_number}: #{cvar.parent_obj}"
+          end
+        end
+      end
+    end
+  end
+  
+  # initiate program
+  def run
+    # load generated parser
+    parser = TreeSitter::Parser.new
+    language = TreeSitter::Language.load('c', @path_to_parser)
+    parser.language = language
+
+    # read c source from current directory
+    src = File.read(@path_to_source)
+
+    # parse
+    tree = parser.parse_string(nil, src)
+    root = tree.root_node
+
+    # 複数パスで解析を実行
+    puts '==================================='
+    
+    # 第1パス: 型定義の収集
+    first_pass(root, src)
+    
+    # 第2パス: 型の関連付け
+    second_pass(root, src)
+    
+    # 第3パス: 関数解析
+    # third_pass(root, src)
+    
+    # 第4パス: ライトバリアポイントの特定
+    fourth_pass(root, src)
+    
+    puts '==================================='
+    puts "success"
+  end
+end

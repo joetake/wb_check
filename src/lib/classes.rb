@@ -334,15 +334,13 @@ class WriteBarrierList
   
   def debug_sample(struct_definitions)
     ctr = 0
-    
-    # 通常のライトバリアポイントを処理
     @list.each do |w|
       left_value = w.left_value.dup  # 元の値を変更しないようにコピーを作成
       clean_left_value = left_value.gsub(/[\(\)\*]/, '')
       data = clean_left_value.split('->')[0]
       cvar = find_cvar(w.vars_in_scope, data)
       if cvar.nil?
-        puts "while write barrrier insertion(): cvar not found for #{data}"
+        puts "while write barrrier insertion(): cvar not found"
         next  # エラーの場合はスキップして次のバリアに進む
       end
 
@@ -393,38 +391,6 @@ class WriteBarrierList
         puts "line #{line}: rb_obj_written(#{old}, #{oldv}, #{young}, #{filename}, #{line})"
       end
     end
-    
-    # memcpyによるデータ変更パターンで検出したライトバリアポイントを処理
-    if defined?(@memcpy_wb_list) && @memcpy_wb_list && !@memcpy_wb_list.empty?
-      puts "DEBUG: Processing #{@memcpy_wb_list.size} memcpy write barriers"
-      
-      @memcpy_wb_list.each do |wb|
-        ctr = ctr + 1
-        
-        # ライトバリア情報を出力
-        obj_name = wb[:obj_name]
-        field_access = wb[:field_access]
-        line_number = wb[:line_number]
-        auto_inserted = wb[:auto_inserted]
-        
-        old = "(VALUE)#{obj_name}"
-        oldv = '(VALUE)(((VALUE)RUBY_Qundef))'
-        young = field_access
-        filename = '"auto_insertion"'
-        
-        # 自動挿入されたライトバリアの場合、コメントを追加
-        if auto_inserted
-          puts "line #{line_number}: /* memcpy detected - auto inserted */"
-        else
-          puts "line #{line_number}: /* memcpy detected */"
-        end
-        
-        puts "line #{line_number}: rb_obj_written(#{old}, #{oldv}, #{young}, #{filename}, #{line_number})"
-      end
-    else
-      puts "DEBUG: No memcpy write barriers detected"
-    end
-    
     puts "num of inserted writebarrier :#{ctr}"
   end
   
