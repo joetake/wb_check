@@ -25,57 +25,61 @@ class CVar
 end
 
 def find_cvar(vars_in_scope, name)
-  vars_in_scope.each do |var|
-    return var if var.name == name
+  # If vars_in_scope is a hash, use direct lookup
+  if vars_in_scope.is_a?(Hash)
+    var = vars_in_scope[name]
+    if var.nil?
+      puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
+    end
+    return var
+  else
+    # Fallback for when vars_in_scope is still an array
+    vars_in_scope.each do |var|
+      return var if var.name == name
+    end
+    puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
   end
-
-  puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
   # exit
 end
 
 class StructDefinitions
-  attr_accessor :list
+  attr_accessor :list, :map
   def initialize()
-    @list = []
+    @list = []  # Keep for backward compatibility
+    @map = {}   # Hash map for O(1) lookups
   end
 
   def register(struct_definition)
     @list << struct_definition
+    @map[struct_definition.name] = struct_definition
   end
 
   # get type of field from struct name and field name
   def find_field(variable_type, field_name)
-    @list.each do |struct_definition|
-      if struct_definition.name == variable_type
-        return struct_definition.find_field(field_name)
-      end
-    end
-    nil
+    struct_definition = @map[variable_type]
+    return struct_definition&.find_field(field_name)
   end
 
   def find_def(struct_name)
     puts "struct_name: #{struct_name}"
-    @list.each do |definition|
-      return definition if definition.name == struct_name
+    struct_definition = @map[struct_name]
+    if struct_definition.nil?
+      puts "field not found"
     end
-    puts "field no found"
-    nil
+    struct_definition
   end
 
   def has_VALUE_element?(struct_name)
-    @list.each do |struct_definition|
-      if struct_definition.name == struct_name
-        return struct_definition.has_VALUE_element?
-      end
-    end
-    false
+    struct_definition = @map[struct_name]
+    return false if struct_definition.nil?
+    struct_definition.has_VALUE_element?
   end
 
   def inspect()
-    if @list.size == 0
+    if @map.empty?
       puts "no Struct registered"
     else
-      @list.each do |struct|
+      @map.each_value do |struct|
         struct.inspect()
       end
     end
@@ -83,34 +87,30 @@ class StructDefinitions
 end
 
 class StructDefinition
-  attr_accessor :name, :fields
+  attr_accessor :name, :fields, :fields_map
   def initialize(name, fields)
     @name = name
-    @fields = fields
+    @fields = fields  # Keep for backward compatibility
+    
+    # Create a hash map of field name -> field
+    @fields_map = {}
+    fields.each do |field|
+      @fields_map[field.name] = field
+    end
   end
 
   def find_field(field_name)
-    @fields.each do |cvar|
-      if cvar.name == field_name
-        return cvar
-      end
-    end
-    nil
+    @fields_map[field_name]
   end
 
   def has_VALUE_element?
-    @fields.each do |cvar|
-      if cvar.type == 'VALUE'
-        return true
-      end
-    end
-    false
+    @fields.any? { |cvar| cvar.type == 'VALUE' }
   end
 
   def inspect()
     puts "name: #{@name}"
     puts "fields:"
-    @fields.each do |f, i|
+    @fields.each_with_index do |f, i|
       puts "#{i}: name: #{f.name}, type: #{f.type}"
     end
   end
@@ -118,30 +118,30 @@ end
 
 class FunctionsRetType
   def initialize()
-    @list = []
+    @list = []  # Keep for backward compatibility
+    @map = {}   # Hash map for O(1) lookups
   end
 
   def register(name, type, pointer_count)
-    @list << FunctionRetType.new(name, type, pointer_count)
+    function = FunctionRetType.new(name, type, pointer_count)
+    @list << function
+    @map[name] = function
   end
 
   def include?(fname)
-    @list.any? {|f| f.name == fname}
+    @map.key?(fname)
   end
 
   def find_by_fname(fname)
-    @TypeInfo.each do |frt|
-      puts frt.name
-      if frt.name == fname
-        puts "frt.name: #{frt.name}"
-        return frt
-      end
+    frt = @map[fname]
+    if frt
+      puts "frt.name: #{frt.name}"
     end
-    nil
+    frt
   end
 
   def inspect
-    @list.each do |f|
+    @map.each_value do |f|
       puts "ret_type: #{f.name}, #{f.type}, #{f.pointer_count}"
     end
   end
@@ -173,13 +173,19 @@ class WriteBarrier
 end
 
 class WriteBarrierList
-  attr_reader :list
+  attr_reader :list, :map
   def initialize()
-    @list = Array.new
+    @list = []  # Keep for backward compatibility
+    @map = {}   # Hash map for faster lookups by line number
   end
 
   def add(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
-    @list << WriteBarrier.new(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
+    barrier = WriteBarrier.new(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
+    @list << barrier
+    
+    # Store by line number for faster lookups
+    @map[line_number] ||= []
+    @map[line_number] << barrier
   end
 
   def inspect()
@@ -202,16 +208,18 @@ class WriteBarrierList
         exit
       end
 
-      changed_fields = Array.new
+      changed_fields = []
       if w.type_name == 'VALUE'
         changed_fields << left_value
       else
         struct_def = struct_definitions.find_def(w.type_name)
-        struct_def.fields.each do |fld|
-          next unless normalize_type_name(fld.type) == "VALUE"
-          subfield_name = fld.name  # "a", "b", etc.
-          # 3. "ptr->structfield.a" の文字列を作成
-          changed_fields <<  "#{w.left_value}.#{subfield_name}"
+        if struct_def
+          struct_def.fields.each do |fld|
+            next unless normalize_type_name(fld.type) == "VALUE"
+            subfield_name = fld.name  # "a", "b", etc.
+            # 3. "ptr->structfield.a" の文字列を作成
+            changed_fields << "#{w.left_value}.#{subfield_name}"
+          end
         end
       end
 
@@ -229,5 +237,9 @@ class WriteBarrierList
     end
     puts "num of inserted writebarrier :#{ctr}"
   end
+  
+  # Get all write barriers for a specific line number
+  def get_by_line(line_number)
+    @map[line_number] || []
+  end
 end
-

@@ -19,9 +19,9 @@ class Analyzer
 
     @struct_definitions = StructDefinitions.new
     @functions_ret_type = FunctionsRetType.new
-    @grobalv = Array.new
+    @grobalv = {}
   end
-
+  
   # find rb_check_typeddata()'s node recursively , return found node
   def find_typedthing_call(node, code)
     call = nil
@@ -120,7 +120,7 @@ class Analyzer
 
   # check :declaration, return defined variables or fields
   def search_declaration(node, code)
-    vars = []
+    vars = {}  # Use hash map instead of array
     var_types = []
     var_names = []
     puts node
@@ -136,7 +136,7 @@ class Analyzer
           var_name_str.delete!('*')
 
           var = CVar.new(var_type_str, var_name_str, pointer_count)
-          vars << var
+          vars[var_name_str] = var
         end
       when :primitive_type, :type_identifier, :sized_type_specifier
         var_types << code[child.start_byte...child.end_byte]
@@ -179,11 +179,11 @@ class Analyzer
         var_name.gsub!('*', '')
         var = CVar.new(var_type, var_name, pointer_count)
         var.show
-        vars << var
+        vars[var_name] = var
       end
       puts "!pointer_count: #{pointer_count}"
     elsif var_types.size == var_names.size && var_names.size > 0 && vars.empty?
-      var_names.each do |var_name, i|
+      var_names.each_with_index do |var_name, i|
         var_name.gsub!(' ', '')
         pointer_count = 0
 
@@ -192,7 +192,7 @@ class Analyzer
         end
         var_name.gsub!('*', '')
         var = CVar.new(var_types[i], var_name, pointer_count)
-        vars << var
+        vars[var_name] = var
       end
     # else
     #   exit
@@ -210,8 +210,6 @@ class Analyzer
         right_value = code[right.start_byte...right.end_byte]
         left = child.child_by_field_name('left')
         left_value = code[left.start_byte...left.end_byte]
-        left = child.child_by_field_name('left')
-        left_value = code[left.start_byte...left.end_byte]
         line_number = child.start_point.row + 1
         puts "        line: #{line_number}"
 
@@ -222,12 +220,17 @@ class Analyzer
 
           if cvar.nil?
             puts "search_expression(): cvar not found"
-            vars_in_scope.each do |cvar|
-              cvar.show
+            if vars_in_scope.is_a?(Hash)
+              vars_in_scope.each_value do |cv|
+                cv.show
+              end
+            else
+              vars_in_scope.each do |cv|
+                cv.show
+              end
             end
             exit
           end
-
 
           cvar.is_typeddata = true
 
@@ -253,20 +256,31 @@ class Analyzer
       end
     end
   end
-
-
+  
   # 2nd depth
   # check child node of :compound_statement, if, while, etc
   def search_inside_block(node, code, _vars_in_bscope)
-    #  to not interfere the original array
-    vars_in_bscope = _vars_in_bscope.dup
+    #  to not interfere the original hash
+    vars_in_bscope = _vars_in_bscope.is_a?(Hash) ? _vars_in_bscope.dup : _vars_in_bscope.dup
 
     # for statement might declarate index variable
     if node.type == :for_statement
       declarator = node.child_by_field_name('initializer')
-      if declarator.type == :declaration
+      if declarator && declarator.type == :declaration
         vars = search_declaration(declarator, code)
-        vars_in_bscope.concat(vars)
+        if vars_in_bscope.is_a?(Hash)
+          vars_in_bscope.merge!(vars)
+        else
+          # Convert old array to hash if needed
+          new_vars = {}
+          vars_in_bscope.each do |var|
+            new_vars[var.name] = var
+          end
+          vars.each do |name, var|
+            new_vars[name] = var
+          end
+          vars_in_bscope = new_vars
+        end
       end
     end
 
@@ -278,29 +292,43 @@ class Analyzer
 
       # find the part of defining Variable
       when :declaration
-      vars = search_declaration(child, code)
+        vars = search_declaration(child, code)
 
-      # if already there is the same element to vars, delete it for update
-      # vars.each do |va|
-      #   vars_in_bscope.delete_if{|v| v.name = va.name}
-      # end
-      vars_in_bscope.concat(vars)
+        # Merge the new variables into the scope
+        if vars_in_bscope.is_a?(Hash)
+          vars_in_bscope.merge!(vars)
+        else
+          # Convert old array to hash if needed
+          new_vars = {}
+          vars_in_bscope.each do |var|
+            new_vars[var.name] = var
+          end
+          vars.each do |name, var|
+            new_vars[name] = var
+          end
+          vars_in_bscope = new_vars
+        end
 
       # find the part of Expression
       when :expression_statement
-      vars_in_scope = Array(vars_in_bscope).concat(Array(@globalv))
-      search_expression(child, code, vars_in_scope)
+        # Combine local and global variables
+        if vars_in_bscope.is_a?(Hash) && @grobalv.is_a?(Hash)
+          vars_in_scope = vars_in_bscope.merge(@grobalv)
+        else
+          # Fallback for backward compatibility
+          vars_in_scope = Array(vars_in_bscope).concat(Array(@grobalv))
+        end
+        search_expression(child, code, vars_in_scope)
       when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
         search_inside_block(child, code, vars_in_bscope)
       end
-
     end
   end
 
   # 2nd depth
   # check child node of :functin_declarator
   def search_function_declarator(node, code)
-    args = []
+    args = {} 
 
     node.each_named do |child|
       puts "    child: #{child.type}"
@@ -309,13 +337,13 @@ class Analyzer
       case child.type
       when :pointer_declarator
         params = search_function_declarator(child, code)
-        args.concat(params)
+        args.merge!(params)
       when :parameter_list
         if child.named_child_count == 1
           declaration_node = child.named_child(0)
           type_node = declaration_node.child_by_field_name('type')
-          puts type_node.type
-          if type_node.type == :primitive_type
+          puts type_node.type if type_node
+          if type_node && type_node.type == :primitive_type
             param_text = code[type_node.start_byte...type_node.end_byte].strip
             # has no param
             if param_text == "void"
@@ -331,6 +359,8 @@ class Analyzer
             type = param.child_by_field_name('type')
             declarator = param.child_by_field_name('declarator')
 
+            next unless type && declarator
+
             var_type = code[type.start_byte...type.end_byte]
             var_name = code[declarator.start_byte...declarator.end_byte]
 
@@ -340,7 +370,8 @@ class Analyzer
             var_type.strip!
             var_name.strip!
 
-            args << CVar.new(var_type, var_name, pointer_count)
+            var = CVar.new(var_type, var_name, pointer_count)
+            args[var_name] = var
           end
         end
       end
@@ -353,7 +384,7 @@ class Analyzer
   def search_function(node, code)
 
     # 関数スコープ内にある変数を管理
-    vars_in_bscope = []
+    vars_in_bscope = {}  # Use hash map instead of array
     puts node
     node.each_named do |child|
       puts "  Function's child: #{child.type}"
@@ -369,7 +400,7 @@ class Analyzer
 
         # pointer_declaratorがネストしている場合があるので降りていく
         while f_declarator && f_declarator.type == :pointer_declarator
-          pointer_count += 1  # “char *” が更に “*” 等で深い階層にある場合
+          pointer_count += 1  # "char *" が更に "*" 等で深い階層にある場合
           # 次の段階へ潜る
           f_declarator = f_declarator.child_by_field_name('declarator')
         end
@@ -383,19 +414,19 @@ class Analyzer
         end
 
         if f_declarator
-        f_name = code[f_declarator.start_byte...f_declarator.end_byte]
-        f_name.strip!
-        if @functions_ret_type.include?(f_name)
-          next
-        end
-        @functions_ret_type.register(f_name, type_str, pointer_count)
+          f_name = code[f_declarator.start_byte...f_declarator.end_byte]
+          f_name.strip!
+          if @functions_ret_type.include?(f_name)
+            next
+          end
+          @functions_ret_type.register(f_name, type_str, pointer_count)
         end
 
       # deep into Function Declarator
       when :function_declarator, :pointer_declarator
         puts "  function_declarator's child: #{child}"
         params = search_function_declarator(child, code)
-        vars_in_bscope.concat(Array(params))
+        vars_in_bscope.merge!(params)
         puts "params: #{params}"
 
       # deep into Function Body
@@ -414,20 +445,26 @@ class Analyzer
     case node.type
     when :type_definition
       type_name = node.child_by_field_name('declarator')
-      struct_node = node.child_by_field_name('type').child_by_field_name('body')
+      struct_node = node.child_by_field_name('type')&.child_by_field_name('body')
     when :struct_specifier, :union_specifier
       type_name = node.child_by_field_name('name')
       struct_node = node.child_by_field_name('body')
     end
+    
+    return unless type_name && struct_node
+    
     type_name = code[type_name.start_byte...type_name.end_byte]
-
 
     # is struct or union definition
     if struct_node
-      field_list = []
+      field_hash = {}
       struct_node.each_named do |c|
-        field_list.concat(search_declaration(c, code))
+        fields = search_declaration(c, code)
+        field_hash.merge!(fields)
       end
+
+      # Convert hash to array for backward compatibility
+      field_list = field_hash.values
 
       # register definition of struct
       struct_definition = StructDefinition.new(type_name, field_list)
@@ -442,13 +479,25 @@ class Analyzer
     function_decl = node.child_by_field_name('declarator')
 
     # detect grobal variable declaration
-    if function_decl.type != :function_declarator
+    if function_decl.nil? || function_decl.type != :function_declarator
       gvs = search_declaration(node, code)
-      @globalv = Array(@globalv).concat(Array(gvs))
+      if @grobalv.is_a?(Hash)
+        @grobalv.merge!(gvs)
+      else
+        # Convert old array to hash if needed
+        new_gvs = {}
+        @grobalv.each do |var|
+          new_gvs[var.name] = var
+        end
+        gvs.each do |name, var|
+          new_gvs[name] = var
+        end
+        @grobalv = new_gvs
+      end
       return
     end
 
-    if function_decl.nil? || (function_decl.type != :function_declarator && function_decl.type != :pointer_declarator)
+    if function_decl.type != :function_declarator && function_decl.type != :pointer_declarator
       puts "unexpected node detected"
     end
 
