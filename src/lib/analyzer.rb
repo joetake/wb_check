@@ -1,5 +1,6 @@
 require 'tree_sitter'
 require_relative 'classes'
+require_relative 'first_path'
 
 # $struct_definitions = StructDefinitions.new
 # $functions_ret_type = FunctionsRetType.new
@@ -17,8 +18,7 @@ class Analyzer
     @number_of_found_declarator = 0
     @wb_list = WriteBarrierList.new
 
-    @struct_definitions = StructDefinitions.new
-    @functions_ret_type = FunctionsRetType.new
+    @struct_definitions = nil
     @grobalv = {}
   end
   
@@ -470,6 +470,7 @@ class Analyzer
       struct_definition = StructDefinition.new(type_name, field_list)
       @struct_definitions.register(struct_definition)
     end
+    struct_definition.inspect
   end
 
   # 1st depth, function proto definition or global
@@ -536,30 +537,32 @@ class Analyzer
     tree = parser.parse_string(nil, src)
     root = tree.root_node
 
-    # check children nodes of root
-    puts '==================================='
-    root.each_named do |child|
-      line_number = child.start_point.row + 1
-      puts "line #{line_number} child node type: #{child.type}"
+    FirstPath.new(root, src).run
 
-      case child.type
-      # find the part of defining Function
-      when :function_definition
-        search_function(child, src)
-      # global variables, function proto
-      when :declaration
-        search_func_proto(child, src)
+    # # check children nodes of root
+    # puts '==================================='
+    # root.each_named do |child|
+    #   line_number = child.start_point.row + 1
+    #   puts "line #{line_number} child node type: #{child.type}"
 
-      # find the part of defining type (like Struct)
-      when :type_definition, :union_specifier, :struct_specifier
-        search_type_definition(child, src)
-      end
-    end
-    puts '==================================='
+    #   case child.type
+    #   # find the part of defining Function
+    #   when :function_definition
+    #     search_function(child, src)
+    #   # global variables, function proto
+    #   when :declaration
+    #     search_func_proto(child, src)
 
-    # show result
-    @wb_list.inspect
-    @wb_list.debug_sample(@struct_definitions)
-    puts "success"
+    #   # find the part of defining type (like Struct)
+    #   when :type_definition, :union_specifier, :struct_specifier
+    #     search_type_definition(child, src)
+    #   end
+    # end
+    # puts '==================================='
+
+    # # show result
+    # @wb_list.inspect
+    # @wb_list.debug_sample(@struct_definitions)
+    # puts "success"
   end
 end

@@ -5,6 +5,11 @@
 const int hoge, **huga;
 int *hoge[];
 
+struct someStruct{
+	int first, second;
+	double third;
+};
+
 int add(int a, int b){
 	int tmp = a + b;
 	return tmp;

@@ -45,12 +45,10 @@ end
 class StructDefinitions
   attr_accessor :list, :map
   def initialize()
-    @list = []  # Keep for backward compatibility
-    @map = {}   # Hash map for O(1) lookups
+    @map = {}
   end
 
   def register(struct_definition)
-    @list << struct_definition
     @map[struct_definition.name] = struct_definition
   end
 
@@ -88,15 +86,9 @@ end
 
 class StructDefinition
   attr_accessor :name, :fields, :fields_map
-  def initialize(name, fields)
+  def initialize(name, fields_map)
     @name = name
-    @fields = fields  # Keep for backward compatibility
-    
-    # Create a hash map of field name -> field
-    @fields_map = {}
-    fields.each do |field|
-      @fields_map[field.name] = field
-    end
+    @fields_map = fields_map
   end
 
   def find_field(field_name)
@@ -110,8 +102,8 @@ class StructDefinition
   def inspect()
     puts "name: #{@name}"
     puts "fields:"
-    @fields.each_with_index do |f, i|
-      puts "#{i}: name: #{f.name}, type: #{f.type}"
+    @fields_map.each_with_index do |(k, v), i|
+      puts " #{i} | name: #{v.name}, type: #{v.type}"
     end
   end
 end
