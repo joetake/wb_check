@@ -10,6 +10,7 @@ class FirstPath
   def initialize(root, code)
     @root = root
     @code = code
+    @function_definitions = {}
   end
 
   def analyze_single_declaration(node)
@@ -81,8 +82,11 @@ class FirstPath
   # return hash map of global variable
   def analyze_global_declaration(node)
     declarator = node.child_by_field_name('declarator')
-    if declarator.type == :function_declarator
-      # do nothing for now
+
+    # if it's function prototype declaration
+    if declarator.field?('parameters')
+      type = node.child_by_field_name('type')
+      analyze_function_definition(type, declarator)
       return nil
     elsif declarator.nil?
       puts "ERROR: declarator not found in declaration"
@@ -97,6 +101,32 @@ class FirstPath
     end
 
     return gvs_map
+  end
+
+  def analyze_function_definition(type_node, decl_node)
+    puts "line: #{decl_node.start_point.row + 1}"
+    pointer_count = 0
+    while(decl_node.type == :pointer_declarator)
+      decl_node = decl_node.child_by_field_name('declarator')
+      pointer_count += 1
+    end
+
+    fname_node = decl_node.child_by_field_name('declarator')
+    fname = @code[fname_node.start_byte...fname_node.end_byte]
+    ret_type = normalize_type_name(@code[type_node.start_byte...type_node.end_byte])
+
+    plist_node = decl_node.child_by_field_name('parameters')
+    vars = []
+    plist_node.each_named do |child|
+      if child.type == :parameter_declaration
+        vars << analyze_single_declaration(child)
+      end
+    end
+
+    puts "ret type: #{ret_type}, fname: #{fname}, pointer count: #{pointer_count}"
+    vars.each do |var, i|
+      puts "arg#{i}: #{var.type} #{var.name}" unless var.nil?
+    end
   end
 
   def run
@@ -117,6 +147,9 @@ class FirstPath
           gvs_map.merge!(new_gvs_map)
         end
       when :function_definition
+        decl = child.child_by_field_name('declarator')
+        type = child.child_by_field_name('type')
+        analyze_function_definition(type, decl)
       end
 
     end

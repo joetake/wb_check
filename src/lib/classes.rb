@@ -3,6 +3,7 @@ def normalize_type_name(type_name)
   type_name.sub(/^union\s+/, '')
            .sub(/^struct\s+/, '')
            .sub(/^enum\s+/, '')
+           .gsub(' ', '') 
 end
 
 def normalize_variable_name(str)
