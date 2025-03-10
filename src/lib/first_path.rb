@@ -12,7 +12,7 @@ class FirstPath
     @code = code
   end
 
-  def analyze_field(node)
+  def analyze_single_declaration(node)
     vars = []
     var_type = ''
     var_names = []
@@ -30,9 +30,14 @@ class FirstPath
 
     # create CVar instance for each variable name
     var_names.each do |var_name_str|
+      # count pointer
       pointer_count = var_name_str.count('*')
-      var_name_str.delete!('*')
-      var = CVar.new(var_type, var_name_str, pointer_count)
+      
+      # count parathesis 
+      parenthesis_count = var_name_str.count('[')
+
+      var_name_str = normalize_variable_name(var_name_str)
+      var = CVar.new(var_type, var_name_str, pointer_count, parenthesis_count)
       vars << var
     end
     return vars
@@ -63,7 +68,7 @@ class FirstPath
     field_map = {}
     if struct_node
       struct_node.each_named do |child|
-        vars = analyze_field(child)
+        vars = analyze_single_declaration(child)
         vars.each do |var|
           field_map[var.name] = var
         end
@@ -72,14 +77,50 @@ class FirstPath
     return StructDefinition.new(type_name, field_map)
   end
 
+  # analyze delcaration that contains global variable and function prototype declaration
+  # return hash map of global variable
+  def analyze_global_declaration(node)
+    declarator = node.child_by_field_name('declarator')
+    if declarator.type == :function_declarator
+      # do nothing for now
+      return nil
+    elsif declarator.nil?
+      puts "ERROR: declarator not found in declaration"
+      return nil
+    end
+
+    # extract global variable information
+    gvs_map = {}
+    vars = analyze_single_declaration(declarator)
+    vars.each do |var|
+      gvs_map[var.name] = var
+    end
+
+    return gvs_map
+  end
+
   def run
     struct_definitions = StructDefinitions.new
+    gvs_map = {}
     @root.each_named do |child| 
       case child.type
+      
+      # struct definition
       when :type_definition, :union_specifier, :struct_specifier
         struct_definition =  get_struct_definition(child)
         struct_definitions.register(struct_definition) if struct_definition
+
+      # global variable and function prototype declaration
+      when :declaration
+        new_gvs_map = analyze_global_declaration(child)
+        unless new_gvs_map.nil?
+          gvs_map.merge!(new_gvs_map)
+        end
+      when :function_definition
       end
+
     end
+
+    return 
   end
 end

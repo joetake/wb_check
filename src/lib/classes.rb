@@ -4,15 +4,28 @@ def normalize_type_name(type_name)
            .sub(/^struct\s+/, '')
            .sub(/^enum\s+/, '')
 end
-class CVar
-  attr_accessor :type, :name, :pointer_count, :is_typeddata, :parent_obj
 
-  def initialize(type, name, pointer_count)
+def normalize_variable_name(str)
+  str.delete!('*')
+  str.gsub!(/\[.*\]/, '')
+  str.gsub!(' ', '')
+  return str
+end
+
+class CVar
+  attr_accessor :type, :name, :pointer_count, :parenthesis_count, :is_typeddata, :parent_obj
+
+  def initialize(type, name, pointer_count, parenthesis_count = 0)
     @type = type
     @name = name
     @pointer_count = pointer_count
+    @parenthesis_count = parenthesis_count
     @is_typeddata = false
     @parent_obj = nil
+  end
+
+  def is_array?
+    @parenthesis_count.positive?
   end
 
   def is_pointer?
