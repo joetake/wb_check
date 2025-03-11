@@ -103,7 +103,7 @@ class FirstPath
     return gvs_map
   end
 
-  def analyze_function_definition(type_node, decl_node)
+  def analyze_function_definition(type_node, decl_node, body_node = nil)
     puts "line: #{decl_node.start_point.row + 1}"
     pointer_count = 0
     while(decl_node.type == :pointer_declarator)
@@ -123,15 +123,15 @@ class FirstPath
       end
     end
 
-    puts "ret type: #{ret_type}, fname: #{fname}, pointer count: #{pointer_count}"
-    vars.each do |var, i|
-      puts "arg#{i}: #{var.type} #{var.name}" unless var.nil?
-    end
+    return FunctionSignature.new(ret_type, pointer_count, fname, vars, body_node)
   end
 
   def run
-    struct_definitions = StructDefinitions.new
+    # initalize information holder
     gvs_map = {}
+    struct_definitions = StructDefinitions.new
+    function_signatures = FunctionSignatures.new
+
     @root.each_named do |child| 
       case child.type
       
@@ -149,9 +149,10 @@ class FirstPath
       when :function_definition
         decl = child.child_by_field_name('declarator')
         type = child.child_by_field_name('type')
-        analyze_function_definition(type, decl)
+        body = child.child_by_field_name('body')
+        function_signatures.add(analyze_function_definition(type, decl, body))
+        function_signatures.inspect
       end
-
     end
 
     return 

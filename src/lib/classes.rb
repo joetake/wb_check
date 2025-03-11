@@ -153,12 +153,42 @@ class FunctionsRetType
   end
 end
 
-class FunctionRetType
-  attr_accessor :name, :type, :pointer_count
-  def initialize(name, type, pointer_count)
-    @name = name
-    @type = type
+class FunctionSignature
+  attr_accessor :ret_type, :pointer_count, :func_name, :arg_list, :body_node
+  def initialize(ret_type, pointer_count, func_name, arg_list, body_node)
+    @ret_type = ret_type
     @pointer_count = pointer_count
+    @func_name = func_name
+    @arg_list = arg_list # array
+    @body_node = body_node
+  end
+
+  def has_body?
+    !@body_node.nil?
+  end
+end
+
+class FunctionSignatures
+  def initialize()
+    @fs_map = {}
+  end
+
+  def add(fs)
+    key = fs.func_name
+
+    # Do not overwrite if already registered and has a body
+    return if @fs_map.key?(key) && !@fs_map[key].has_body?
+    @fs_map[key] = fs
+  end
+
+  def inspect()
+    @fs_map.each_value do |fs|
+      puts "registerd function: #{fs.func_name}, has_body: #{fs.has_body?}"
+      # puts "ret_type: #{fs.ret_type}, func_name: #{fs.func_name}, pointer_count: #{fs.pointer_count}"
+      # fs.arg_list.each do |arg|
+      #   puts "arg: #{arg.type} #{arg.name}"
+      # end
+    end
   end
 end
 
