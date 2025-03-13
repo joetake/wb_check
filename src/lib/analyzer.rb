@@ -1,12 +1,7 @@
 require 'tree_sitter'
 require_relative 'classes'
-require_relative 'first_path
+require_relative 'first_path'
 require_relative 'second_path'
-
-# $struct_definitions = StructDefinitions.new
-# $functions_ret_type = FunctionsRetType.new
-
-# list of global variables
 
 class Analyzer
   LHS_NIL_RESULT = {type_name: nil, is_pointer_access: false, is_typeddata: false, needWB: false}
