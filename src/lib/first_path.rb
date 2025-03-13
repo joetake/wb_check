@@ -1,11 +1,13 @@
 require 'tree_sitter'
 require_relative 'classes'
+require_relative 'util'
 
 # gather inormation about
 #  - struct difinition
 #  - global variable
 #  - function signature
 class FirstPath
+  attr_reader :gvs_map, :struct_definitions, :function_signatures
   def initialize(root, code)
     @root = root
     @code = code
@@ -15,39 +17,6 @@ class FirstPath
     @gvs_map = {}
     @struct_definitions = StructDefinitions.new
     @function_signatures = FunctionSignatures.new
-  end
-
-  attr_reader :gvs_map, :struct_definitions, :function_signatures
-
-  def analyze_single_declaration(node)
-    vars = []
-    var_type = ''
-    var_names = []
-
-    # extract type and variable name
-    node.each_field do |field, child|
-      case field
-      when 'type'
-      var_type = @code[child.start_byte...child.end_byte].strip
-      when 'declarator'
-        var_name_str = @code[child.start_byte...child.end_byte].strip
-        var_names << var_name_str
-      end
-    end
-
-    # create CVar instance for each variable name
-    var_names.each do |var_name_str|
-      # count pointer
-      pointer_count = var_name_str.count('*')
-      
-      # count parathesis 
-      parenthesis_count = var_name_str.count('[')
-
-      var_name_str = normalize_variable_name(var_name_str)
-      var = CVar.new(var_type, var_name_str, pointer_count, parenthesis_count)
-      vars << var
-    end
-    return vars
   end
 
   # type_definition: typedef struct { ... } type_name;
@@ -89,8 +58,18 @@ class FirstPath
   def analyze_global_declaration(node)
     declarator = node.child_by_field_name('declarator')
 
+    # peel layer of declarator to check if it's function prototype declaration
+    tmp = declarator
+    while
+      if tmp.type == :pointer_declarator || tmp.type == :array_declarator 
+        tmp = tmp.child_by_field_name('declarator')
+      else
+        break
+      end
+    end
+
     # if it's function prototype declaration
-    if declarator.field?('parameters')
+    if tmp.field?('parameters')
       type = node.child_by_field_name('type')
       analyze_function_definition(type, declarator)
       return nil
@@ -101,7 +80,7 @@ class FirstPath
 
     # extract global variable information
     gvs_map = {}
-    vars = analyze_single_declaration(declarator)
+    vars = analyze_single_declaration(node)
     vars.each do |var|
       gvs_map[var.name] = var
     end
@@ -110,7 +89,6 @@ class FirstPath
   end
 
   def analyze_function_definition(type_node, decl_node, body_node = nil)
-    puts "line: #{decl_node.start_point.row + 1}"
     pointer_count = 0
     while(decl_node.type == :pointer_declarator)
       decl_node = decl_node.child_by_field_name('declarator')
