@@ -1,6 +1,7 @@
 require 'tree_sitter'
 require_relative 'classes'
-require_relative 'first_path'
+require_relative 'first_path
+require_relative 'second_path'
 
 # $struct_definitions = StructDefinitions.new
 # $functions_ret_type = FunctionsRetType.new
