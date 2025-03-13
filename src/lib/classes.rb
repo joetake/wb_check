@@ -107,37 +107,6 @@ class StructDefinition
   end
 end
 
-class FunctionsRetType
-  def initialize()
-    @list = []  # Keep for backward compatibility
-    @map = {}   # Hash map for O(1) lookups
-  end
-
-  def register(name, type, pointer_count)
-    function = FunctionRetType.new(name, type, pointer_count)
-    @list << function
-    @map[name] = function
-  end
-
-  def include?(fname)
-    @map.key?(fname)
-  end
-
-  def find_by_fname(fname)
-    frt = @map[fname]
-    if frt
-      puts "frt.name: #{frt.name}"
-    end
-    frt
-  end
-
-  def inspect
-    @map.each_value do |f|
-      puts "ret_type: #{f.name}, #{f.type}, #{f.pointer_count}"
-    end
-  end
-end
-
 class FunctionSignature
   attr_accessor :ret_type, :pointer_count, :func_name, :arg_list, :body_node
   def initialize(ret_type, pointer_count, func_name, arg_list, body_node)
@@ -166,8 +135,8 @@ class FunctionSignatures
     @fs_map[key] = fs
   end
 
-  def find_by_fname(body_node)
-
+  def find_by_fname(fname)
+    return @fs_map[fname]
   end
 
   def inspect()
