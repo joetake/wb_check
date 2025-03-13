@@ -4,14 +4,20 @@ require_relative 'classes'
 # gather inormation about
 #  - struct difinition
 #  - global variable
-#  - function definition
-#  - rb_data_type_t type constant and their type
+#  - function signature
 class FirstPath
   def initialize(root, code)
     @root = root
     @code = code
     @function_definitions = {}
+
+    # information holder
+    @gvs_map = {}
+    @struct_definitions = StructDefinitions.new
+    @function_signatures = FunctionSignatures.new
   end
+
+  attr_reader :gvs_map, :struct_definitions, :function_signatures
 
   def analyze_single_declaration(node)
     vars = []
@@ -128,9 +134,6 @@ class FirstPath
 
   def run
     # initalize information holder
-    gvs_map = {}
-    struct_definitions = StructDefinitions.new
-    function_signatures = FunctionSignatures.new
 
     @root.each_named do |child| 
       case child.type
@@ -138,23 +141,22 @@ class FirstPath
       # struct definition
       when :type_definition, :union_specifier, :struct_specifier
         struct_definition =  get_struct_definition(child)
-        struct_definitions.register(struct_definition) if struct_definition
+        @struct_definitions.register(struct_definition) if struct_definition
 
       # global variable and function prototype declaration
       when :declaration
         new_gvs_map = analyze_global_declaration(child)
         unless new_gvs_map.nil?
-          gvs_map.merge!(new_gvs_map)
+          @gvs_map.merge!(new_gvs_map)
         end
       when :function_definition
         decl = child.child_by_field_name('declarator')
         type = child.child_by_field_name('type')
         body = child.child_by_field_name('body')
-        function_signatures.add(analyze_function_definition(type, decl, body))
-        function_signatures.inspect
+        @function_signatures.add(analyze_function_definition(type, decl, body))
       end
     end
 
-    return 
+    return
   end
 end

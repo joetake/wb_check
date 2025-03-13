@@ -15,11 +15,11 @@ class Analyzer
   def initialize(path_to_source, path_to_parser)
     @path_to_source = path_to_source
     @path_to_parser = path_to_parser
-    @number_of_found_declarator = 0
     @wb_list = WriteBarrierList.new
 
+    @gvs_map = nil
     @struct_definitions = nil
-    @grobalv = {}
+    @function_signatures = nil
   end
   
   # find rb_check_typeddata()'s node recursively , return found node
@@ -436,93 +436,6 @@ class Analyzer
     end
   end
 
-  # 1st depth
-  # check child node of :type_definition
-  def search_type_definition(node, code)
-
-    puts node
-    # check the definition of field
-    case node.type
-    when :type_definition
-      type_name = node.child_by_field_name('declarator')
-      struct_node = node.child_by_field_name('type')&.child_by_field_name('body')
-    when :struct_specifier, :union_specifier
-      type_name = node.child_by_field_name('name')
-      struct_node = node.child_by_field_name('body')
-    end
-    
-    return unless type_name && struct_node
-    
-    type_name = code[type_name.start_byte...type_name.end_byte]
-
-    # is struct or union definition
-    if struct_node
-      field_hash = {}
-      struct_node.each_named do |c|
-        fields = search_declaration(c, code)
-        field_hash.merge!(fields)
-      end
-
-      # Convert hash to array for backward compatibility
-      field_list = field_hash.values
-
-      # register definition of struct
-      struct_definition = StructDefinition.new(type_name, field_list)
-      @struct_definitions.register(struct_definition)
-    end
-    struct_definition.inspect
-  end
-
-  # 1st depth, function proto definition or global
-  # ロジックがぐちゃぐちゃなので整理したい
-  def search_func_proto(node, code)
-    puts node
-    function_decl = node.child_by_field_name('declarator')
-
-    # detect grobal variable declaration
-    if function_decl.nil? || function_decl.type != :function_declarator
-      gvs = search_declaration(node, code)
-      if @grobalv.is_a?(Hash)
-        @grobalv.merge!(gvs)
-      else
-        # Convert old array to hash if needed
-        new_gvs = {}
-        @grobalv.each do |var|
-          new_gvs[var.name] = var
-        end
-        gvs.each do |name, var|
-          new_gvs[name] = var
-        end
-        @grobalv = new_gvs
-      end
-      return
-    end
-
-    if function_decl.type != :function_declarator && function_decl.type != :pointer_declarator
-      puts "unexpected node detected"
-    end
-
-    if function_decl.type == :pointer_declarator
-      function_decl = function_decl.child_by_field_name('declarator')
-    end
-    type_node = node.child_by_field_name('type')
-    if type_node.nil?
-      type_node = node.child_by_field_name('declartor')
-      exit
-    end
-
-    type_str = code[type_node.start_byte...type_node.end_byte]
-    pointer_count = type_str.count('*')
-    type_str.delete!('*')
-
-    func_id_node = function_decl.child_by_field_name('declarator')
-    puts "type_str: #{type_str}, pointer_count: #{pointer_count}"
-    return if func_id_node.nil?
-    func_name = code[func_id_node.start_byte...func_id_node.end_byte]
-
-    @functions_ret_type.register(func_name.strip, type_str.strip, pointer_count)
-  end
-
   # initiate program
   def run
     # load generated parser
@@ -537,7 +450,12 @@ class Analyzer
     tree = parser.parse_string(nil, src)
     root = tree.root_node
 
-    FirstPath.new(root, src).run
+    first_path = FirstPath.new(root, src)
+    first_path.run
+    @gvs_map = first_path.gvs_map
+    @struct_definitions = first_path.struct_definitions
+    @function_signatures = first_path.function_signatures
+
 
     # # check children nodes of root
     # puts '==================================='
