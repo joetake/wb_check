@@ -1,18 +1,3 @@
-
-def normalize_type_name(type_name)
-  type_name.sub(/^union\s+/, '')
-           .sub(/^struct\s+/, '')
-           .sub(/^enum\s+/, '')
-           .gsub(' ', '') 
-end
-
-def normalize_variable_name(str)
-  str.delete!('*')
-  str.gsub!(/\[.*\]/, '')
-  str.gsub!(' ', '')
-  return str
-end
-
 class CVar
   attr_accessor :type, :name, :pointer_count, :parenthesis_count, :is_typeddata, :parent_obj
 
@@ -34,7 +19,7 @@ class CVar
   end
 
   def show
-    puts "type: #{@type}, name: #{@name}, pointer count: #{@pointer_count}"
+    puts "type: #{@type}, name: #{@name}, pointer count: #{@pointer_count}, parenthesis count: #{@parenthesis_count}"
   end
 end
 
@@ -179,6 +164,10 @@ class FunctionSignatures
     # Do not overwrite if already registered and has a body
     return if @fs_map.key?(key) && !@fs_map[key].has_body?
     @fs_map[key] = fs
+  end
+
+  def find_by_fname(body_node)
+
   end
 
   def inspect()
