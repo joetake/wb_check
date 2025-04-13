@@ -1,44 +1,40 @@
 require 'tree_sitter'
 require_relative 'classes'
-require_relative 'util'
 require_relative 'first_path'
+require_relative 'second_path'
 
-# analyze the node and find the point of code that write barrier required
-class SecondPath
+class Analyzer
   LHS_NIL_RESULT = {type_name: nil, is_pointer_access: false, is_typeddata: false, needWB: false}
   LHS_WB_RESULT = {type_name: nil, is_pointer_access: true, is_typeddata: true, needWB: true}
 
-  def initialize(root, code, gvs_map, struct_definitions, function_signatures)
-    @root = root
-    @code = code
-    @gvs_map = gvs_map
-    @struct_definitions = struct_definitions
-    @function_signatures = function_signatures
-
-    @write_barrier_list = WriteBarrierList.new
+  def initialize(path_to_source, path_to_parser)
+    @path_to_source = path_to_source
+    @path_to_parser = path_to_parser
+    @wb_list = WriteBarrierList.new
   end
 
   # find rb_check_typeddata()'s node recursively , return found node
-  def analyze_rbcheck_call(node)
+  def find_typedthing_call(node, code)
     call = nil
     node.each_named do |child|
-      str = @code[child.start_byte...child.end_byte]
+      str = code[child.start_byte...child.end_byte]
       if child.named_child_count > 0
-        call = analyze_rbcheck_call(child)
-        # end
-        if child.type == :call_expression && str.include?('rb_check_typeddata')
-          call = child
-        end
+      call = find_typedthing_call(child, code)
+      end
+      if child.type == :call_expression && str.include?('rb_check_typeddata')
+        call = child
       end
     end
     return call
   end
 
-  def process_lhs(node, vars_in_scope)
+  def process_lhs(node, code, vars_in_scope)
+    puts node.type
     case node.type
     when :identifier
-      name = @code[node.start_byte...node.end_byte]
+      name = code[node.start_byte...node.end_byte]
       name.gsub!(/[\(\)\*]/, '')
+      puts "name: #{name}"
       cvar = find_cvar(vars_in_scope, name)
 
       # 一時的！！！
@@ -50,10 +46,12 @@ class SecondPath
       return {type_name: type_name, is_pointer_access: false, is_typeddata: cvar.is_typeddata, needWB: false}
     when :field_expression
       operator_node = node.child_by_field_name('operator')
-      operator = @code[operator_node.start_byte...operator_node.end_byte]
+      operator = code[operator_node.start_byte...operator_node.end_byte]
+      puts operator
       argument = node.child_by_field_name('argument')
       field = node.child_by_field_name('field')
-      argument_info = process_lhs(argument, vars_in_scope)
+      puts "argument: #{argument}"
+      argument_info = process_lhs(argument, code, vars_in_scope)
 
       unless argument_info[:is_typeddata]
         return LHS_NIL_RESULT
@@ -62,11 +60,12 @@ class SecondPath
       # check field
       field_info = nil
       if field.type == :field_identifier
-        field_name = @code[field.start_byte...field.end_byte]
+        field_name = code[field.start_byte...field.end_byte]
+        puts "#{argument_info[:type_name]}, #{field_name}"
         field_cvar = @struct_definitions.find_field(argument_info[:type_name], field_name)
         field_info = {type_name: field_cvar.type, is_pointer_access: false, is_typeddata: false, needWB: false}
       else
-        field_info = process_lhs(field, vars_in_scope)
+        field_info = process_lhs(field, code, vars_in_scope)
         # if field expression in field is needWB: true return immediately
         return field_info if field_info[:needWB]
       end
@@ -79,7 +78,9 @@ class SecondPath
       else
 
         # check struct in field has VALUE element or not
+        puts "field_type: #{new_type_name}"
         has_VALUE_element = @struct_definitions.has_VALUE_element?(new_type_name)
+        puts "has_VALUE_element?: #{has_VALUE_element}"
 
         # if it isn't struct or not expected access, return as needWB: false
         unless has_VALUE_element
@@ -91,16 +92,16 @@ class SecondPath
 
     when :pointer_expression
       child = node.child_by_field_name('argument')
-      result = process_lhs(child, vars_in_scope)
+      result = process_lhs(child, code, vars_in_scope)
       result[:is_pointer_access] = true
       return result
     when :parenthesized_expression
       inner = node.named_child(0)
-      return process_lhs(inner, vars_in_scope)
+      return process_lhs(inner, code, vars_in_scope)
 
     when :assignment_expression
       inner = node.named_child(1)
-      return process_lhs(inner, vars_in_scope)
+      return process_lhs(inner, code, vars_in_scope)
     # when :call_expression, :cast_expression, :binary_expression, :subscript_expression
     #   return LHS_NIL_RESULT
     else
@@ -108,22 +109,25 @@ class SecondPath
     end
   end
 
-  # analyze expression statement
-  def analyze_expression(node, vars_in_scope)
+  # check :expression
+  def search_expression(node, code, vars_in_scope)
     node.each_named do |child|
       if child.type == :assignment_expression
+        puts child
         right = child.child_by_field_name('right')
-        right_value = @code[right.start_byte...right.end_byte]
+        right_value = code[right.start_byte...right.end_byte]
         left = child.child_by_field_name('left')
-        left_value = @code[left.start_byte...left.end_byte]
+        left_value = code[left.start_byte...left.end_byte]
+        line_number = child.start_point.row + 1
+        puts "        line: #{line_number}"
+
         if right_value.include?('rb_check_typeddata')
           # find T_DATA struct
           left_value.gsub!(/[\(\)\*]/, '')
           cvar = find_cvar(vars_in_scope, left_value)
 
-          # for debug
           if cvar.nil?
-            puts "analyze_expression(): cvar not found"
+            puts "search_expression(): cvar not found"
             if vars_in_scope.is_a?(Hash)
               vars_in_scope.each_value do |cv|
                 cv.show
@@ -137,88 +141,55 @@ class SecondPath
           end
 
           cvar.is_typeddata = true
+
           # find parent obj
-          call = analyze_rbcheck_call(right)
+          call = find_typedthing_call(right, code)
           arguments = call.child_by_field_name('arguments')
           first_arg = arguments.named_child(0)
-          parent_obj = @code[first_arg.start_byte...first_arg.end_byte]
+          parent_obj = code[first_arg.start_byte...first_arg.end_byte]
+          puts parent_obj
+
           cvar.parent_obj = parent_obj
         end
 
-        result = process_lhs(left, vars_in_scope)
+        result = process_lhs(left, code, vars_in_scope)
+        puts "result: #{result}"
+
         if result[:needWB]
-          line_number = child.start_point.row + 1
-          @write_barrier_list.add(left, left_value, right_value, line_number, vars_in_scope, result[:type_name])
+          puts "        WRITEBARRIER on fire"
+          @wb_list.add(left, left_value, right_value, line_number, vars_in_scope, result[:type_name])
         end
       else
-        analyze_expression(child, vars_in_scope)
+        search_expression(child, code, vars_in_scope)
       end
     end
   end
 
-  # analyze block node
-  # vars_in_local: map of variables in local scope
-  def analyze_block(node, _vars_in_local)
+  def run
+    # load generated parser
+    parser = TreeSitter::Parser.new
+    language = TreeSitter::Language.load('c', @path_to_parser)
+    parser.language = language
 
-    # duplicate vars_in_local to make new scope
-    vars_in_local = _vars_in_local.clone
+    # read c source from current directory
+    src = File.read(@path_to_source)
 
-    # for statement might declare index variable on and after C99
-    if node.type == :for_statement
-      declarator = node.child_by_field_name('initializer')
-      vars = analyze_single_declaration(declarator) if declarator
-      vars.each {|var| vars_in_local[var.name] = var} # overwrite whether duplicated variable name or not
-    end
+    # parse
+    tree = parser.parse_string(nil, src)
+    root = tree.root_node
 
-    # analyze each child node
-    node.each_named do |child|
-      case child.type
+    # gather information from nodes
+    first_path = FirstPath.new(root, src)
+    first_path.run
+    gvs_map = first_path.gvs_map
+    struct_definitions = first_path.struct_definitions
+    function_signatures = first_path.function_signatures
 
-      # declaration of new variable
-      when :declaration
-        vars = analyze_single_declaration(child)
-        vars.each {|var| vars_in_local[var.name] = var} # overwrite whether duplicated variable name or not
+    # find the part of code that reuires write barrier
+    second_path = SecondPath.new(root, src, gvs_map, struct_definitions, function_signatures)
+    write_barrier_list = second_path.run
 
-      # any expression statement including assignment
-      when :expression_statement
-        # vars_in_local has priority over @gvs_map
-        analyze_expression(child, @gvs_map.merge!(vars_in_local))
-
-      # these statement can make new block scope
-      when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
-        analyze_block(child, vars_in_local)
-      end
-    end
-  end
-
-  def analyze_function(node)
-    # extract function name
-    fname_node = node
-    while
-      new_node = fname_node.child_by_field_name('declarator')
-      break if new_node.nil?
-      fname_node = new_node
-    end
-    fname = @code[fname_node.start_byte...fname_node.end_byte].strip
-
-    # fetch a function signature
-    function_signature = @function_signatures.find_by_fname(fname)
-    unless function_signature
-      puts "function signature not found: #{fname}"
-      exit
-    end
-
-    # fetch parameter list
-    # analyze function body
-    body = node.child_by_field_name('body')
-    analyze_block(body, function_signature.arg_list)
-  end
-
-  def run()
-    @root.each_named do |node|
-    analyze_function(node) if node.type == :function_definition
-    end
-
-    return @write_barrier_list
+    # show result
+    write_barrier_list.inspect
   end
 end

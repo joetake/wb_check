@@ -25,20 +25,15 @@ end
 
 def find_cvar(vars_in_scope, name)
   # If vars_in_scope is a hash, use direct lookup
-  if vars_in_scope.is_a?(Hash)
-    var = vars_in_scope[name]
-    if var.nil?
-      puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
-    end
-    return var
-  else
-    # Fallback for when vars_in_scope is still an array
-    vars_in_scope.each do |var|
-      return var if var.name == name
-    end
+  var = vars_in_scope[name]
+  if var.nil?
     puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
+    vars_in_scope.each_value do |cv|
+      cv.show
+    end
+    exit
   end
-  # exit
+  return var
 end
 
 class StructDefinitions
@@ -84,24 +79,24 @@ class StructDefinitions
 end
 
 class StructDefinition
-  attr_accessor :name, :fields, :fields_map
-  def initialize(name, fields_map)
+  attr_accessor :name, :fields
+  def initialize(name, fields)
     @name = name
-    @fields_map = fields_map
+    @fields = fields
   end
 
   def find_field(field_name)
-    @fields_map[field_name]
+    @fields[field_name]
   end
 
   def has_VALUE_element?
-    @fields.any? { |cvar| cvar.type == 'VALUE' }
+    @fields.values.any? { |cvar| cvar.type == 'VALUE' }
   end
 
   def inspect()
     puts "name: #{@name}"
     puts "fields:"
-    @fields_map.each_with_index do |(k, v), i|
+    @fields.each_with_index do |(k, v), i|
       puts " #{i} | name: #{v.name}, type: #{v.type}"
     end
   end
@@ -154,7 +149,7 @@ class WriteBarrier
   attr_accessor :left_node, :left_value, :right_value, :line_number, :vars_in_scope, :type_name
   def initialize(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
     @left_node = left_node
-    @left_value = left_value 
+    @left_value = left_value
     @right_value = right_value
     @line_number = line_number
     @vars_in_scope = vars_in_scope
@@ -176,7 +171,7 @@ class WriteBarrierList
   def add(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
     barrier = WriteBarrier.new(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
     @list << barrier
-    
+
     # Store by line number for faster lookups
     @map[line_number] ||= []
     @map[line_number] << barrier
@@ -189,7 +184,7 @@ class WriteBarrierList
     end
     puts "number: #{@list.size}"
   end
-  
+
   def debug_sample(struct_definitions)
     ctr = 0
     @list.each do |w|
@@ -231,7 +226,7 @@ class WriteBarrierList
     end
     puts "num of inserted writebarrier :#{ctr}"
   end
-  
+
   # Get all write barriers for a specific line number
   def get_by_line(line_number)
     @map[line_number] || []

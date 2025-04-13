@@ -20,7 +20,7 @@ class FirstPath
   end
 
   # type_definition: typedef struct { ... } type_name;
-  # struct_specifier: struct type_name { ... }; 
+  # struct_specifier: struct type_name { ... };
   # union_specifier: union type_name { ... };
   def get_struct_definition(node)
     type_name = nil
@@ -35,7 +35,7 @@ class FirstPath
       type_name = node.child_by_field_name('name')
       struct_node = node.child_by_field_name('body')
     end
-    
+
     # check if type_name and struct_node are found
     return nil if type_name.nil? ||  struct_node.nil?
     type_name = @code[type_name.start_byte...type_name.end_byte]
@@ -61,7 +61,7 @@ class FirstPath
     # peel layer of declarator to check if it's function prototype declaration
     tmp = declarator
     while
-      if tmp.type == :pointer_declarator || tmp.type == :array_declarator 
+      if tmp.type == :pointer_declarator || tmp.type == :array_declarator
         tmp = tmp.child_by_field_name('declarator')
       else
         break
@@ -100,22 +100,23 @@ class FirstPath
     ret_type = normalize_type_name(@code[type_node.start_byte...type_node.end_byte])
 
     plist_node = decl_node.child_by_field_name('parameters')
-    vars = []
+    params = {}
     plist_node.each_named do |child|
       if child.type == :parameter_declaration
-        vars << analyze_single_declaration(child)
+        vars = analyze_single_declaration(child)
+        vars.each {|var| params[var.name] = var}
       end
     end
 
-    return FunctionSignature.new(ret_type, pointer_count, fname, vars, body_node)
+    return FunctionSignature.new(ret_type, pointer_count, fname, params, body_node)
   end
 
   def run
     # initalize information holder
 
-    @root.each_named do |child| 
+    @root.each_named do |child|
       case child.type
-      
+
       # struct definition
       when :type_definition, :union_specifier, :struct_specifier
         struct_definition =  get_struct_definition(child)
