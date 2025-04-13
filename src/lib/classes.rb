@@ -53,7 +53,6 @@ class StructDefinitions
   end
 
   def find_def(struct_name)
-    puts "struct_name: #{struct_name}"
     struct_definition = @map[struct_name]
     if struct_definition.nil?
       puts "field not found"
@@ -204,8 +203,8 @@ class WriteBarrierList
         struct_def = struct_definitions.find_def(w.type_name)
         if struct_def
           struct_def.fields.each do |fld|
-            next unless normalize_type_name(fld.type) == "VALUE"
-            subfield_name = fld.name  # "a", "b", etc.
+            next unless normalize_type_name(fld[1].type) == "VALUE"
+            subfield_name = fld[1].name  # "a", "b", etc.
             # 3. "ptr->structfield.a" の文字列を作成
             changed_fields << "#{w.left_value}.#{subfield_name}"
           end
@@ -227,8 +226,40 @@ class WriteBarrierList
     puts "num of inserted writebarrier :#{ctr}"
   end
 
-  # Get all write barriers for a specific line number
-  def get_by_line(line_number)
-    @map[line_number] || []
+
+  def show_list(struct_definitions)
+    ctr = 0
+    @list.each do |w|
+      left_value = w.left_value
+      left_value.gsub!(/[\(\)\*]/, '')
+      data = left_value.split('->')[0]
+      cvar = find_cvar(w.vars_in_scope, data)
+      if cvar.nil?
+        puts "while write barrrier insertion(): cvar not found"
+        exit
+      end
+
+      changed_fields = []
+      if w.type_name == 'VALUE'
+        changed_fields << left_value
+      else
+        struct_def = struct_definitions.find_def(w.type_name)
+        if struct_def
+          struct_def.fields.each do |fld|
+            next unless normalize_type_name(fld[1].type) == "VALUE"
+            subfield_name = fld[1].name
+            changed_fields << "#{w.left_value}.#{subfield_name}"
+          end
+        end
+      end
+
+      changed_fields.each do |changed_field|
+        ctr = ctr + 1
+        # それぞれの引数
+        old = cvar.parent_obj
+        puts "line #{w.line_number }: object: #{old}, changed_field: #{changed_field}"
+      end
+    end
+    puts "num of inserted writebarrier :#{ctr}"
   end
 end

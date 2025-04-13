@@ -32,9 +32,9 @@ class Analyzer
 
     # find the part of code that reuires write barrier
     second_path = SecondPath.new(root, src, gvs_map, struct_definitions, function_signatures)
-    @wb_list = second_path.run
+    second_path.run
 
     # show result
-    @wb_list.inspect
+    second_path.write_barrier_list.show_list(struct_definitions)
   end
 end

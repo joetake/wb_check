@@ -8,6 +8,7 @@ class SecondPath
   LHS_NIL_RESULT = {type_name: nil, is_pointer_access: false, is_typeddata: false, needWB: false}
   LHS_WB_RESULT = {type_name: nil, is_pointer_access: true, is_typeddata: true, needWB: true}
 
+  attr_reader :write_barrier_list
   def initialize(root, code, gvs_map, struct_definitions, function_signatures)
     @root = root
     @code = code
@@ -218,7 +219,5 @@ class SecondPath
     @root.each_named do |node|
     analyze_function(node) if node.type == :function_definition
     end
-
-    return @write_barrier_list
   end
 end
