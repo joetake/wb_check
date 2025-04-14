@@ -5,8 +5,7 @@ require_relative 'first_path'
 
 # analyze the node and find the point of code that write barrier required
 class SecondPath
-  LHS_NIL_RESULT = {type_name: nil, is_pointer_access: false, is_typeddata: false, needWB: false}
-  LHS_WB_RESULT = {type_name: nil, is_pointer_access: true, is_typeddata: true, needWB: true}
+  LHS_NIL_RESULT = {type_name: nil, is_pointer_access: false, is_typeddata: false, needWB: false, param: nil}
 
   attr_reader :write_barrier_list
   def initialize(root, code, gvs_map, struct_definitions, function_signatures)
@@ -17,9 +16,64 @@ class SecondPath
     @function_signatures = function_signatures
 
     @write_barrier_list = WriteBarrierList.new
+    @context_stack = ContextStack.new
   end
 
-  # find rb_check_typeddata()'s node recursively , return found node
+  def traverse_inside_function_call(function_signature, marked_parameter_index)
+    # set context
+    @context_stack.push(Context.new(marked_parameter_index))
+
+    analyze_function(function_signature.self_node)
+    puts @context_stack.current_context.changed_parameter_index
+
+    # reset context
+    @context_stack.pop
+  end
+
+  def analyze_function_call(node, vars_in_scope)
+    function = node.child_by_field_name('function')
+    function_name = @code[function.start_byte...function.end_byte]
+    arguments = node.child_by_field_name('arguments')
+
+    ctr = 0
+    marked_argument_index = Array.new
+    arguments.each_named do |arg|
+      case arg.type
+      when :identifier
+        arg_name = @code[arg.start_byte...arg.end_byte]
+        cvar = find_cvar(vars_in_scope, arg_name)
+
+        # cvar can be nil if the argument is not a variable
+        next if cvar.nil?
+
+        if cvar.is_typeddata
+          marked_argument_index << ctr
+        end
+      end
+      ctr += 1
+    end
+    if marked_argument_index.size > 0
+      function_signature = @function_signatures.find_by_fname(function_name)
+      # しょうがない
+      return if function_signature.nil?
+
+      if function_signature.has_body?
+        traverse_inside_function_call(function_signature, marked_argument_index)
+      end
+
+    end
+  end
+
+  # find :call_expression recursively
+  def find_function_call(node, vars_in_scope)
+    analyze_function_call(node, vars_in_scope) if node.type == :call_expression
+    node.each_named do |child|
+      find_function_call(child, vars_in_scope)
+    end
+    nil
+  end
+
+  # find parent object from rb_check_typeddata
   def analyze_rbcheck_call(node)
     call = nil
     node.each_named do |child|
@@ -35,6 +89,8 @@ class SecondPath
     return call
   end
 
+  # analyze lhs of assignment expression
+  # find a reference changed point
   def process_lhs(node, vars_in_scope)
     case node.type
     when :identifier
@@ -42,13 +98,16 @@ class SecondPath
       name.gsub!(/[\(\)\*]/, '')
       cvar = find_cvar(vars_in_scope, name)
 
-      # 一時的！！！
       return LHS_NIL_RESULT if cvar.nil?
       type_name = cvar.type
       if type_name.split(' ').size > 1
         type_name = type_name.split(' ').last
       end
-      return {type_name: type_name, is_pointer_access: false, is_typeddata: cvar.is_typeddata, needWB: false}
+      param = nil
+      if cvar.is_parameter
+        param = cvar
+      end
+      return {type_name: type_name, is_pointer_access: false, is_typeddata: cvar.is_typeddata, needWB: false, param: param}
     when :field_expression
       operator_node = node.child_by_field_name('operator')
       operator = @code[operator_node.start_byte...operator_node.end_byte]
@@ -65,7 +124,7 @@ class SecondPath
       if field.type == :field_identifier
         field_name = @code[field.start_byte...field.end_byte]
         field_cvar = @struct_definitions.find_field(argument_info[:type_name], field_name)
-        field_info = {type_name: field_cvar.type, is_pointer_access: false, is_typeddata: false, needWB: false}
+        field_info = {type_name: field_cvar.type, is_pointer_access: false, is_typeddata: false, needWB: false, param: argument_info[:param]}
       else
         field_info = process_lhs(field, vars_in_scope)
         # if field expression in field is needWB: true return immediately
@@ -74,9 +133,9 @@ class SecondPath
 
       expected_access = (operator == '->') || (operator == '.' && argument_info[:is_pointer_access])
       new_type_name = normalize_type_name(field_info[:type_name])
-      # check WBneed or not
+      # check need WB or not
       if new_type_name == 'VALUE' && expected_access
-        return {type_name: 'VALUE', is_pointer_access: true, is_typeddata: false, needWB: true}
+        return {type_name: 'VALUE', is_pointer_access: true, is_typeddata: false, needWB: true, param: argument_info[:param]}
       else
 
         # check struct in field has VALUE element or not
@@ -84,10 +143,11 @@ class SecondPath
 
         # if it isn't struct or not expected access, return as needWB: false
         unless has_VALUE_element
-          return {type_name: new_type_name, is_pointer_access: field_info[:is_pointer_access], is_typeddata: argument_info[:is_typeddata], needWB: false}
+          return {type_name: new_type_name, is_pointer_access: field_info[:is_pointer_access], is_typeddata: argument_info[:is_typeddata], needWB: false, param: argument_info[:param]}
         end
 
-        return {type_name: new_type_name, is_pointer_access: true, is_typeddata: true, needWB: true}
+        # if it is struct and expected access, return as needWB: true
+        return {type_name: new_type_name, is_pointer_access: true, is_typeddata: true, needWB: true, param: argument_info[:param]}
       end
 
     when :pointer_expression
@@ -109,48 +169,55 @@ class SecondPath
     end
   end
 
+  def analyze_assignment(child, vars_in_scope)
+    right = child.child_by_field_name('right')
+    right_value = @code[right.start_byte...right.end_byte]
+    left = child.child_by_field_name('left')
+    left_value = @code[left.start_byte...left.end_byte]
+    if right_value.include?('rb_check_typeddata')
+      # find T_DATA struct
+      left_value.gsub!(/[\(\)\*]/, '')
+      cvar = find_cvar(vars_in_scope, left_value)
+
+      cvar.is_typeddata = true
+      # find parent obj
+      call = analyze_rbcheck_call(right)
+      arguments = call.child_by_field_name('arguments')
+      first_arg = arguments.named_child(0)
+      parent_obj = @code[first_arg.start_byte...first_arg.end_byte]
+      cvar.parent_obj = parent_obj
+    else
+
+      # find function call from rhs
+      find_function_call(right, vars_in_scope)
+    end
+
+    result = process_lhs(left, vars_in_scope)
+    if result[:needWB]
+      if @context_stack.empty?
+        line_number = child.start_point.row + 1
+        @write_barrier_list.add(left, left_value, right_value, line_number, vars_in_scope, result[:type_name])
+      elsif result[:param]
+        ctr = 0
+        @context_stack.current_context.current_function_params.each do |param|
+          if param[1].name == result[:param].name
+            @changed_parameter_index = ctr
+            @context_stack.current_context.changed_parameter_index << ctr
+          end
+          ctr += 1
+        end
+      end
+    end
+  end
+
   # analyze expression statement
   def analyze_expression(node, vars_in_scope)
     node.each_named do |child|
-      if child.type == :assignment_expression
-        right = child.child_by_field_name('right')
-        right_value = @code[right.start_byte...right.end_byte]
-        left = child.child_by_field_name('left')
-        left_value = @code[left.start_byte...left.end_byte]
-        if right_value.include?('rb_check_typeddata')
-          # find T_DATA struct
-          left_value.gsub!(/[\(\)\*]/, '')
-          cvar = find_cvar(vars_in_scope, left_value)
-
-          # for debug
-          if cvar.nil?
-            puts "analyze_expression(): cvar not found"
-            if vars_in_scope.is_a?(Hash)
-              vars_in_scope.each_value do |cv|
-                cv.show
-              end
-            else
-              vars_in_scope.each do |cv|
-                cv.show
-              end
-            end
-            exit
-          end
-
-          cvar.is_typeddata = true
-          # find parent obj
-          call = analyze_rbcheck_call(right)
-          arguments = call.child_by_field_name('arguments')
-          first_arg = arguments.named_child(0)
-          parent_obj = @code[first_arg.start_byte...first_arg.end_byte]
-          cvar.parent_obj = parent_obj
-        end
-
-        result = process_lhs(left, vars_in_scope)
-        if result[:needWB]
-          line_number = child.start_point.row + 1
-          @write_barrier_list.add(left, left_value, right_value, line_number, vars_in_scope, result[:type_name])
-        end
+      case child.type
+      when :assignment_expression
+        analyze_assignment(child, vars_in_scope)
+      when :call_expression
+        analyze_function_call(child, vars_in_scope)
       else
         analyze_expression(child, vars_in_scope)
       end
@@ -212,7 +279,27 @@ class SecondPath
     # fetch parameter list
     # analyze function body
     body = node.child_by_field_name('body')
-    analyze_block(body, function_signature.arg_list)
+    arguments = Hash.new
+
+    unless @context_stack.empty?
+      c = @context_stack.current_context
+      function_signature.arg_list.each_with_index do |arg, i|
+
+        # avoid overwriting
+        new_arg = arg.deep_clone
+        if c.marked_argument_index.include?(i)
+          new_arg.is_typeddata = true
+        end
+        new_arg.is_parameter = true
+        # convert argument list, array to hash
+        arguments[new_arg.name] = new_arg
+      end
+    c.current_function_params = arguments
+    else
+      function_signature.arg_list.each {|arg| arguments[arg.name] = arg}
+    end
+
+    analyze_block(body, arguments)
   end
 
   def run()

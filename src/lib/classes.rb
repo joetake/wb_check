@@ -1,5 +1,5 @@
 class CVar
-  attr_accessor :type, :name, :pointer_count, :parenthesis_count, :is_typeddata, :parent_obj
+  attr_accessor :type, :name, :pointer_count, :parenthesis_count, :is_typeddata, :parent_obj, :is_parameter
 
   def initialize(type, name, pointer_count, parenthesis_count = 0)
     @type = type
@@ -8,6 +8,11 @@ class CVar
     @parenthesis_count = parenthesis_count
     @is_typeddata = false
     @parent_obj = nil
+    @is_parameter = false
+  end
+
+  def deep_clone()
+    return CVar.new(@type, @name, @pointer_count, @parenthesis_count)
   end
 
   def is_array?
@@ -27,11 +32,11 @@ def find_cvar(vars_in_scope, name)
   # If vars_in_scope is a hash, use direct lookup
   var = vars_in_scope[name]
   if var.nil?
-    puts "ERROR: can't find \"#{name}\" in scope (while find_cvar)"
-    vars_in_scope.each_value do |cv|
-      cv.show
-    end
-    exit
+    puts "skip fiding #{name} in scope"
+    # vars_in_scope.each_value do |cv|
+    #   cv.show
+    # end
+    # exit
   end
   return var
 end
@@ -102,17 +107,18 @@ class StructDefinition
 end
 
 class FunctionSignature
-  attr_accessor :ret_type, :pointer_count, :func_name, :arg_list, :body_node
-  def initialize(ret_type, pointer_count, func_name, arg_list, body_node)
+  attr_accessor :ret_type, :pointer_count, :func_name, :arg_list, :self_node
+  def initialize(ret_type, pointer_count, func_name, arg_list, self_node, has_body)
     @ret_type = ret_type
     @pointer_count = pointer_count
     @func_name = func_name
     @arg_list = arg_list # array
-    @body_node = body_node
+    @self_node = self_node
+    @has_body = has_body
   end
 
   def has_body?
-    !@body_node.nil?
+    @has_body
   end
 end
 
@@ -261,5 +267,36 @@ class WriteBarrierList
       end
     end
     puts "num of inserted writebarrier :#{ctr}"
+  end
+end
+
+class Context
+  attr_accessor :marked_argument_index, :current_function_params, :changed_parameter_index
+  def initialize(marked_parameter_index)
+    @marked_argument_index = marked_parameter_index
+    @current_function_params = Array.new
+    @changed_parameter_index = Array.new
+  end
+end
+
+class ContextStack
+  def initialize()
+    @stack = []
+  end
+
+  def push(context)
+    @stack.push(context)
+  end
+
+  def pop
+    @stack.pop
+  end
+
+  def current_context
+    @stack.last
+  end
+
+  def empty?
+    @stack.empty?
   end
 end

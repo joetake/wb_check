@@ -71,11 +71,12 @@ class FirstPath
     # if it's function prototype declaration
     if tmp.field?('parameters')
       type = node.child_by_field_name('type')
-      analyze_function_definition(type, declarator)
+      body = node.child_by_field_name('body')
+      analyze_function_definition(type, declarator, node,body.nil?)
       return nil
     elsif declarator.nil?
-      puts "ERROR: declarator not found in declaration"
-      return nil
+    puts "ERROR: declarator not found in declaration"
+    return nil
     end
 
     # extract global variable information
@@ -88,7 +89,8 @@ class FirstPath
     return gvs_map
   end
 
-  def analyze_function_definition(type_node, decl_node, body_node = nil)
+  def analyze_function_definition(type_node, decl_node, self_node, hasnt_body)
+    has_body = !hasnt_body
     pointer_count = 0
     while(decl_node.type == :pointer_declarator)
       decl_node = decl_node.child_by_field_name('declarator')
@@ -100,15 +102,16 @@ class FirstPath
     ret_type = normalize_type_name(@code[type_node.start_byte...type_node.end_byte])
 
     plist_node = decl_node.child_by_field_name('parameters')
-    params = {}
+    params = Array.new
     plist_node.each_named do |child|
       if child.type == :parameter_declaration
         vars = analyze_single_declaration(child)
-        vars.each {|var| params[var.name] = var}
+        # vars.each {|var| params[var.name] = var}
+        params.concat(vars)
       end
     end
 
-    return FunctionSignature.new(ret_type, pointer_count, fname, params, body_node)
+    return FunctionSignature.new(ret_type, pointer_count, fname, params, self_node, has_body)
   end
 
   def run
@@ -132,7 +135,7 @@ class FirstPath
         decl = child.child_by_field_name('declarator')
         type = child.child_by_field_name('type')
         body = child.child_by_field_name('body')
-        @function_signatures.add(analyze_function_definition(type, decl, body))
+        @function_signatures.add(analyze_function_definition(type, decl, child, body.nil?))
       end
     end
 

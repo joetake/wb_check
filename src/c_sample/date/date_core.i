@@ -10347,6 +10347,7 @@ clear_civil(union DateData *x)
 static void
 set_sg(union DateData *x, double sg)
 {
+x->c.nth = 0; // inserted for debug
     if ((!((x)->flags & (1 << 7)))) {
  get_s_jd(x);
  clear_civil(x);
