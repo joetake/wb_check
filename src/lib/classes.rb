@@ -151,14 +151,15 @@ class FunctionSignatures
 end
 
 class WriteBarrier
-  attr_accessor :left_node, :left_value, :right_value, :line_number, :vars_in_scope, :type_name
-  def initialize(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
+  attr_accessor :left_node, :left_value, :right_value, :line_number, :vars_in_scope, :type_name, :status
+  def initialize(left_node, left_value, right_value, line_number, vars_in_scope, type_name, status)
     @left_node = left_node
     @left_value = left_value
     @right_value = right_value
     @line_number = line_number
     @vars_in_scope = vars_in_scope
     @type_name = type_name
+    @status = status
   end
 
   def inspect
@@ -173,8 +174,8 @@ class WriteBarrierList
     @map = {}   # Hash map for faster lookups by line number
   end
 
-  def add(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
-    barrier = WriteBarrier.new(left_node, left_value, right_value, line_number, vars_in_scope, type_name)
+  def add(left_node, left_value, right_value, line_number, vars_in_scope, type_name, status)
+    barrier = WriteBarrier.new(left_node, left_value, right_value, line_number, vars_in_scope, type_name, status)
     @list << barrier
 
     # Store by line number for faster lookups
@@ -236,37 +237,42 @@ class WriteBarrierList
   def show_list(struct_definitions)
     ctr = 0
     @list.each do |w|
-      left_value = w.left_value
-      left_value.gsub!(/[\(\)\*]/, '')
-      data = left_value.split('->')[0]
-      cvar = find_cvar(w.vars_in_scope, data)
-      if cvar.nil?
-        puts "while write barrrier insertion(): cvar not found"
-        exit
-      end
+      case w.status
+      when :high
+        left_value = w.left_value
+        left_value.gsub!(/[\(\)\*]/, '')
+        data = left_value.split('->')[0]
+        cvar = find_cvar(w.vars_in_scope, data)
+        if cvar.nil?
+          puts "while write barrrier insertion(): cvar not found"
+          exit
+        end
 
-      changed_fields = []
-      if w.type_name == 'VALUE'
-        changed_fields << left_value
-      else
-        struct_def = struct_definitions.find_def(w.type_name)
-        if struct_def
-          struct_def.fields.each do |fld|
-            next unless normalize_type_name(fld[1].type) == "VALUE"
-            subfield_name = fld[1].name
-            changed_fields << "#{w.left_value}.#{subfield_name}"
+        changed_fields = []
+        if w.type_name == 'VALUE'
+          changed_fields << left_value
+        else
+          struct_def = struct_definitions.find_def(w.type_name)
+          if struct_def
+            struct_def.fields.each do |fld|
+              next unless normalize_type_name(fld[1].type) == "VALUE"
+              subfield_name = fld[1].name
+              changed_fields << "#{w.left_value}.#{subfield_name}"
+            end
           end
         end
-      end
 
-      changed_fields.each do |changed_field|
-        ctr = ctr + 1
-        # それぞれの引数
-        old = cvar.parent_obj
-        puts "line #{w.line_number }: object: #{old}, changed_field: #{changed_field}"
+        changed_fields.each do |changed_field|
+          ctr = ctr + 1
+          # それぞれの引数
+          old = cvar.parent_obj
+          puts "line #{w.line_number}: object: #{old}, changed_field: #{changed_field}, accuracy: #{w.status}"
+        end
+      when :low
+        puts "line #{w.line_number}, changed_pointer: #{left.name}, accuracy: #{status}"
       end
     end
-    puts "num of inserted writebarrier :#{ctr}"
+      puts "num of inserted writebarrier :#{ctr}"
   end
 end
 

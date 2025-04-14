@@ -24,10 +24,11 @@ class SecondPath
     @context_stack.push(Context.new(marked_parameter_index))
 
     analyze_function(function_signature.self_node)
-    puts @context_stack.current_context.changed_parameter_index
+    ret = @context_stack.current_context.changed_parameter_index
 
     # reset context
     @context_stack.pop
+    return ret
   end
 
   def analyze_function_call(node, vars_in_scope)
@@ -53,12 +54,27 @@ class SecondPath
       ctr += 1
     end
     if marked_argument_index.size > 0
+      # initialize index list
+      changed_argument_index = Array.new
+
       function_signature = @function_signatures.find_by_fname(function_name)
       # しょうがない
       return if function_signature.nil?
 
+      # we can analyze more deeply
       if function_signature.has_body?
-        traverse_inside_function_call(function_signature, marked_argument_index)
+      changed_argument_parameter  = traverse_inside_function_call(function_signature, marked_argument_index)
+
+      # specific case
+      elsif function_name == 'memcpy' && marked_argument_index.include?(1)
+      changed_argument_index << 1
+      end
+
+      line_number = node.start_point.row + 1
+      function_signature.arg_list.each do |arg, i|
+        if changed_argument_index.include?(i)
+          @write_barrier_list.add(nil, arg, nil, nil, line_number, nil, nil, :low)
+        end
       end
 
     end
@@ -196,7 +212,7 @@ class SecondPath
     if result[:needWB]
       if @context_stack.empty?
         line_number = child.start_point.row + 1
-        @write_barrier_list.add(left, left_value, right_value, line_number, vars_in_scope, result[:type_name])
+        @write_barrier_list.add(left, left_value, right_value, line_number, vars_in_scope, result[:type_name], :high)
       elsif result[:param]
         ctr = 0
         @context_stack.current_context.current_function_params.each do |param|
