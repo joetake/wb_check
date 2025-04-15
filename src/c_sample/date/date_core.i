@@ -12184,7 +12184,7 @@ date_to_datetime(VALUE self)
  }
     }
     else {
- VALUE new = d_lite_s_alloc_complex(cDateTime);
+VALUE new = d_lite_s_alloc_complex(cDateTime);
  {
      union DateData *bdat; ((bdat) = ((union DateData *)rb_check_typeddata((new), (&d_lite_type))));;
      bdat->c = adat->c;

@@ -269,10 +269,31 @@ class WriteBarrierList
           puts "line #{w.line_number}: object: #{old}, changed_field: #{changed_field}, accuracy: #{w.status}"
         end
       when :low
-        puts "line #{w.line_number}, changed_pointer: #{left.name}, accuracy: #{status}"
+        puts "line #{w.line_number}, changed_pointer: #{w.left_value}, accuracy: #{w.status}"
       end
     end
       puts "num of inserted writebarrier :#{ctr}"
+  end
+
+  def show_reference_changed_points(struct_definitions)
+    ctr = 0
+    @list.each do |w|
+
+      obj = nil
+      unless w.vars_in_scope.nil?
+        left_value = w.left_value
+        left_value.gsub!(/[\(\)\*]/, '')
+        data = left_value.split('->')[0]
+        cvar = find_cvar(w.vars_in_scope, data)
+        obj = cvar.parent_obj
+      else
+        obj = "Unknown"
+      end
+
+      puts "line: #{w.line_number}, object: #{obj}, changed_pointer: #{w.left_value}, accuracy: #{w.status}"
+      ctr = ctr + 1
+    end
+    puts "num of found reference_changed point :#{ctr}"
   end
 end
 

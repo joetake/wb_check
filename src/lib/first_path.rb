@@ -110,7 +110,6 @@ class FirstPath
         params.concat(vars)
       end
     end
-
     return FunctionSignature.new(ret_type, pointer_count, fname, params, self_node, has_body)
   end
 

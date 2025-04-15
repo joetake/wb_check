@@ -35,6 +35,6 @@ class Analyzer
     second_path.run
 
     # show result
-    second_path.write_barrier_list.show_list(struct_definitions)
+    second_path.write_barrier_list.show_reference_changed_points(struct_definitions)
   end
 end

@@ -37,11 +37,10 @@ class SecondPath
     function = node.child_by_field_name('function')
     function_name = @code[function.start_byte...function.end_byte]
     arguments = node.child_by_field_name('arguments')
-    puts line_number = node.start_point.row + 1
-    puts "#{function_name}, arguments: #{arguments}"
 
     ctr = 0
     marked_argument_index = Array.new
+    args = Array.new
     arguments.each_named do |arg|
       tmp = arg
       # find identifier node
@@ -56,16 +55,15 @@ class SecondPath
 
       # cvar can be nil if the argument is not a variable
       next if cvar.nil?
-      puts "i: #{ctr}, arg_name: #{arg_name}, is_typeddata: #{cvar.is_typeddata}"
 
       if cvar.is_typeddata
         marked_argument_index << ctr
       end
 
+      args << cvar
       ctr += 1
     end
 
-    puts "marked_argument_index: #{marked_argument_index}"
     if marked_argument_index.size > 0
       # initialize index list
       changed_argument_index = Array.new
@@ -77,28 +75,25 @@ class SecondPath
 
         # specific case # memcpy has 1st argument as destination
         # todo: add more known func list
-        puts "function signature not found: #{function_name}"
         if function_name == 'memcpy' && marked_argument_index.include?(0)
-          puts "aa"
           if @context_stack.empty?
-            @write_barrier_list.add(nil, "aa", nil, nil, line_number, nil, nil, :low)
+            @write_barrier_list.add(nil, args[marked_argument_index[0]], nil, line_number, nil, nil, :low)
           else
-            @context.current_context.changed_parameter_index << 0
+            @context_stack.current_context.changed_parameter_index << 0
           end
         end
-        return 
+        return
       end
 
       # we can analyze more deeply
       if function_signature.has_body?
         context  = traverse_inside_function_call(function_signature, marked_argument_index)
-        puts "changed_argument_index: #{context.changed_parameter_index}"
       end
 
       line_number = node.start_point.row + 1
-      function_signature.arg_list.each do |arg, i|
+      function_signature.arg_list.each_with_index do |arg, i|
         if context.changed_parameter_index.include?(i)
-          @write_barrier_list.add(nil, arg, nil, nil, line_number, nil, nil, :low)
+          @write_barrier_list.add(args[i], args[i].name, nil, line_number, nil, nil, :low)
         end
       end
 
@@ -219,6 +214,7 @@ class SecondPath
       # find T_DATA struct
       left_value.gsub!(/[\(\)\*]/, '')
       cvar = find_cvar(vars_in_scope, left_value)
+      return if cvar.nil?
 
       cvar.is_typeddata = true
       # find parent obj
@@ -266,21 +262,23 @@ class SecondPath
   end
 
   def analyze_node(node, vars_in_local)
-    case node.type
-    when :declaration
-      vars = analyze_single_declaration(node)
-      vars.each { |var| vars_in_local[var.name] = var }
-    when :expression_statement
-      analyze_expression(node, @gvs_map.merge(vars_in_local))
-    when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
-      node.each_named do |child|
+    node.each_named do |child|
+      case child.type
+      when :declaration
+        vars = analyze_single_declaration(child)
+        vars.each { |var| vars_in_local[var.name] = var }
+      when :expression_statement
+        analyze_expression(child, @gvs_map.merge(vars_in_local))
+      when :assignment_expression
+        analyze_assignment(child, @gvs_map.merge(vars_in_local))
+      when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
         analyze_block(child, vars_in_local)
-      end
-    when :call_expression
-      analyze_function_call(node, @gvs_map.merge(vars_in_local))
-    else
-      node.each_named do |child|
-        analyze_node(child, vars_in_local)
+      when :call_expression
+        analyze_function_call(child, @gvs_map.merge(vars_in_local))
+      else
+        child.each_named do |gchild|
+          analyze_node(gchild, vars_in_local)
+        end
       end
     end
   end
@@ -299,33 +297,7 @@ class SecondPath
       vars.each {|var| vars_in_local[var.name] = var} # overwrite whether duplicated variable name or not
     end
 
-    node.each_named do |child|
-      analyze_node(child, vars_in_local)
-    end
-    # # analyze each child node
-    # node.each_named do |child|
-    #   puts "child: #{child.type}"
-    #   case child.type
-
-    #   # declaration of new variable
-    #   when :declaration
-    #     vars = analyze_single_declaration(child)
-    #     vars.each {|var| vars_in_local[var.name] = var} # overwrite whether duplicated variable name or not
-
-    #   # any expression statement including assignment
-    #   when :expression_statement
-    #     # vars_in_local has priority over @gvs_map
-    #     analyze_expression(child, @gvs_map.merge!(vars_in_local))
-
-    #   # these statement can make new block scope
-    #   when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
-    #     analyze_block(child, vars_in_local)
-      
-    #   when :call_expression
-    #     analyze_function_call(child, @gvs_map.merge!(vars_in_local))
-    #   end
-    # end
-
+    analyze_node(node, vars_in_local)
   end
 
   def analyze_function(node)
@@ -341,7 +313,7 @@ class SecondPath
     # fetch a function signature
     function_signature = @function_signatures.find_by_fname(fname)
     unless function_signature
-      puts "function signature not found: #{fname}"
+      puts "ERROR: function signature not found for #{fname}"
       exit
     end
 
