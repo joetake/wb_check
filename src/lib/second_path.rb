@@ -24,10 +24,12 @@ class SecondPath
     @context_stack.push(Context.new(marked_parameter_index))
 
     analyze_function(function_signature.self_node)
-    ret = @context_stack.current_context.changed_parameter_index
 
-    # reset context
-    @context_stack.pop
+    # get and reset context
+    ret = @context_stack.pop
+    unless @context_stack.empty?
+      @context_stack.current_context.changed_parameter_index = ret.changed_parameter_index
+    end
     return ret
   end
 
@@ -35,44 +37,67 @@ class SecondPath
     function = node.child_by_field_name('function')
     function_name = @code[function.start_byte...function.end_byte]
     arguments = node.child_by_field_name('arguments')
+    puts line_number = node.start_point.row + 1
+    puts "#{function_name}, arguments: #{arguments}"
 
     ctr = 0
     marked_argument_index = Array.new
     arguments.each_named do |arg|
-      case arg.type
-      when :identifier
-        arg_name = @code[arg.start_byte...arg.end_byte]
-        cvar = find_cvar(vars_in_scope, arg_name)
-
-        # cvar can be nil if the argument is not a variable
-        next if cvar.nil?
-
-        if cvar.is_typeddata
-          marked_argument_index << ctr
-        end
+      tmp = arg
+      # find identifier node
+      while tmp.type != :identifier
+        break if tmp.named_child_count == 0
+        tmp = tmp.named_child(0)
       end
+      identifier = tmp
+
+      arg_name = @code[identifier.start_byte...identifier.end_byte]
+      cvar = find_cvar(vars_in_scope, arg_name)
+
+      # cvar can be nil if the argument is not a variable
+      next if cvar.nil?
+      puts "i: #{ctr}, arg_name: #{arg_name}, is_typeddata: #{cvar.is_typeddata}"
+
+      if cvar.is_typeddata
+        marked_argument_index << ctr
+      end
+
       ctr += 1
     end
+
+    puts "marked_argument_index: #{marked_argument_index}"
     if marked_argument_index.size > 0
       # initialize index list
       changed_argument_index = Array.new
 
       function_signature = @function_signatures.find_by_fname(function_name)
-      # しょうがない
-      return if function_signature.nil?
+
+      # signature doesn't exist, defined in external
+      if function_signature.nil?
+
+        # specific case # memcpy has 1st argument as destination
+        # todo: add more known func list
+        puts "function signature not found: #{function_name}"
+        if function_name == 'memcpy' && marked_argument_index.include?(0)
+          puts "aa"
+          if @context_stack.empty?
+            @write_barrier_list.add(nil, "aa", nil, nil, line_number, nil, nil, :low)
+          else
+            @context.current_context.changed_parameter_index << 0
+          end
+        end
+        return 
+      end
 
       # we can analyze more deeply
       if function_signature.has_body?
-      changed_argument_parameter  = traverse_inside_function_call(function_signature, marked_argument_index)
-
-      # specific case
-      elsif function_name == 'memcpy' && marked_argument_index.include?(1)
-      changed_argument_index << 1
+        context  = traverse_inside_function_call(function_signature, marked_argument_index)
+        puts "changed_argument_index: #{context.changed_parameter_index}"
       end
 
       line_number = node.start_point.row + 1
       function_signature.arg_list.each do |arg, i|
-        if changed_argument_index.include?(i)
+        if context.changed_parameter_index.include?(i)
           @write_barrier_list.add(nil, arg, nil, nil, line_number, nil, nil, :low)
         end
       end
@@ -240,6 +265,26 @@ class SecondPath
     end
   end
 
+  def analyze_node(node, vars_in_local)
+    case node.type
+    when :declaration
+      vars = analyze_single_declaration(node)
+      vars.each { |var| vars_in_local[var.name] = var }
+    when :expression_statement
+      analyze_expression(node, @gvs_map.merge(vars_in_local))
+    when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
+      node.each_named do |child|
+        analyze_block(child, vars_in_local)
+      end
+    when :call_expression
+      analyze_function_call(node, @gvs_map.merge(vars_in_local))
+    else
+      node.each_named do |child|
+        analyze_node(child, vars_in_local)
+      end
+    end
+  end
+
   # analyze block node
   # vars_in_local: map of variables in local scope
   def analyze_block(node, _vars_in_local)
@@ -254,25 +299,33 @@ class SecondPath
       vars.each {|var| vars_in_local[var.name] = var} # overwrite whether duplicated variable name or not
     end
 
-    # analyze each child node
     node.each_named do |child|
-      case child.type
-
-      # declaration of new variable
-      when :declaration
-        vars = analyze_single_declaration(child)
-        vars.each {|var| vars_in_local[var.name] = var} # overwrite whether duplicated variable name or not
-
-      # any expression statement including assignment
-      when :expression_statement
-        # vars_in_local has priority over @gvs_map
-        analyze_expression(child, @gvs_map.merge!(vars_in_local))
-
-      # these statement can make new block scope
-      when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
-        analyze_block(child, vars_in_local)
-      end
+      analyze_node(child, vars_in_local)
     end
+    # # analyze each child node
+    # node.each_named do |child|
+    #   puts "child: #{child.type}"
+    #   case child.type
+
+    #   # declaration of new variable
+    #   when :declaration
+    #     vars = analyze_single_declaration(child)
+    #     vars.each {|var| vars_in_local[var.name] = var} # overwrite whether duplicated variable name or not
+
+    #   # any expression statement including assignment
+    #   when :expression_statement
+    #     # vars_in_local has priority over @gvs_map
+    #     analyze_expression(child, @gvs_map.merge!(vars_in_local))
+
+    #   # these statement can make new block scope
+    #   when :if_statement, :else_clause, :compound_statement, :for_statement, :while_statement, :do_statement, :switch_statement
+    #     analyze_block(child, vars_in_local)
+      
+    #   when :call_expression
+    #     analyze_function_call(child, @gvs_map.merge!(vars_in_local))
+    #   end
+    # end
+
   end
 
   def analyze_function(node)
