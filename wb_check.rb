@@ -11,9 +11,19 @@ require_relative 'lib/analyzer'
 # run gc in advance
 GC.start
 
-# get path for parser from environmental variables
-path_to_source = ENV['OBJECT']
-path_to_parser = ENV['PATH_TO_C99PARSER']
+# get parser and source
+path_to_source = ARGV[0].to_s
+path_to_parser = './bin/libtree-sitter-c.so'
+
+if path_to_source.nil?
+  puts "can't find source code"
+  return
+end
+
+if path_to_parser.nil?
+  puts "can't find parser"
+  return
+end
 
 # start measuring
 before = ObjectSpace.memsize_of_all
