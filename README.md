@@ -1,4 +1,4 @@
-# wb_check - Write You a Barrier! -
+# wb_check - Write You a Barrier For Great Good -
 ## About Tool
 The tool is for checking/inserting Write Barrier inside C extension code.
 
